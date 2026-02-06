@@ -1,0 +1,26 @@
+[world]
+name = "Pokerstarks"
+description = "ZK Poker on Starknet — provably fair, fully private Texas Hold'em"
+seed = "pokerstarks"
+
+[namespace]
+default = "pokerstarks"
+
+[env]
+rpc_url = "https://api.cartridge.gg/x/starknet/sepolia"
+# Set these to your deployer account
+# account_address = "0x..."
+# private_key = "0x..."
+
+[writers]
+"pokerstarks" = [
+    "pokerstarks-lobby_system",
+    "pokerstarks-game_setup_system",
+    "pokerstarks-shuffle_system",
+    "pokerstarks-dealing_system",
+    "pokerstarks-betting_system",
+    "pokerstarks-showdown_system",
+    "pokerstarks-settle_system",
+    "pokerstarks-chat_system",
+    "pokerstarks-timeout_system",
+]
