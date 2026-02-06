@@ -1,0 +1,50 @@
+# Dojo / Cairo
+contracts/target/
+contracts/manifests/
+*.sierra.json
+*.casm.json
+
+# Noir
+circuits/*/target/
+circuits/*/proofs/
+circuits/*/Prover.toml
+
+# Garaga verifiers build artifacts
+verifiers/*/target/
+verifiers/*/.tool-versions
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+garaga-venv/
+.venv/
+venv/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+memory.md
+*.log
+
+# Environment
+.env
+.env.*
+!.env.example
