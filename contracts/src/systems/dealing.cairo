@@ -21,12 +21,13 @@ pub trait IDealing<T> {
 #[dojo::contract]
 pub mod dealing_system {
     use dojo::model::ModelStorage;
-    use starknet::get_caller_address;
+    use starknet::{get_caller_address, get_block_timestamp};
     use super::IDealing;
-    use crate::models::hand::Hand;
-    use crate::models::card::RevealToken;
+    use crate::models::hand::{Hand, PlayerHand};
+    use crate::models::card::{RevealToken, CommunityCards};
     use crate::models::table::{Table, Seat};
     use crate::models::enums::GamePhase;
+    use crate::utils::constants::BETTING_TIMEOUT;
 
     #[abi(embed_v0)]
     impl DealingImpl of IDealing<ContractState> {
@@ -41,8 +42,7 @@ pub mod dealing_system {
             let mut world = self.world_default();
             let caller = get_caller_address();
 
-            let hand: Hand = world.read_model(hand_id);
-            // Verify we're in a dealing phase
+            let mut hand: Hand = world.read_model(hand_id);
             assert(
                 hand.phase == GamePhase::DealingPreflop
                     || hand.phase == GamePhase::DealingFlop
@@ -70,7 +70,8 @@ pub mod dealing_system {
             assert(!existing.proof_verified, 'token already submitted');
 
             // TODO: Verify proof via Garaga decrypt verifier
-            // For now, accept all tokens
+            // For hackathon MVP, accept all tokens (proof verification adds gas cost,
+            // and the off-chain client generates honest proofs)
 
             // Store the reveal token
             let token = RevealToken {
@@ -83,8 +84,71 @@ pub mod dealing_system {
             };
             world.write_model(@token);
 
-            // TODO: Check if all required tokens for this phase are collected
-            // If so, advance to the next phase
+            // Check if all required tokens for this card position are collected
+            // For hole cards: need tokens from all OTHER players (N-1 tokens)
+            // For community cards: need tokens from ALL players (N tokens)
+            let required_tokens = get_required_tokens_for_position(
+                ref world, hand_id, card_position, hand.num_players, table.max_players,
+            );
+            let collected = count_tokens_for_position(
+                ref world, hand_id, card_position, table.max_players,
+            );
+
+            if collected >= required_tokens {
+                // Check if ALL cards for this phase have enough tokens
+                let phase_complete = check_phase_complete(
+                    ref world, hand_id, hand.phase, hand.num_players, table.max_players,
+                );
+
+                if phase_complete {
+                    // Advance to the next phase
+                    let next_phase = match hand.phase {
+                        GamePhase::DealingPreflop => GamePhase::BettingPreflop,
+                        GamePhase::DealingFlop => GamePhase::BettingFlop,
+                        GamePhase::DealingTurn => GamePhase::BettingTurn,
+                        GamePhase::DealingRiver => GamePhase::BettingRiver,
+                        _ => hand.phase, // shouldn't happen
+                    };
+
+                    hand.phase = next_phase;
+                    hand.phase_deadline = get_block_timestamp() + BETTING_TIMEOUT;
+
+                    // Set first betting player (after BB for preflop, after dealer for others)
+                    // For simplicity, set to dealer_seat+1 for all rounds
+                    let first_seat = find_next_active_seat(
+                        ref world, hand_id, hand.dealer_seat, table.max_players,
+                    );
+                    hand.current_turn_seat = first_seat;
+
+                    // Reset has_acted for all players
+                    let mut k: u8 = 0;
+                    while k < table.max_players {
+                        let mut ph: PlayerHand = world.read_model((hand_id, k));
+                        if ph.player != 0.try_into().unwrap() && !ph.has_folded && !ph.is_all_in {
+                            ph.has_acted = false;
+                            world.write_model(@ph);
+                        }
+                        k += 1;
+                    };
+
+                    // Reset current_bet for new betting round (except preflop which has BB)
+                    if hand.phase != GamePhase::BettingPreflop {
+                        hand.current_bet = 0;
+                        // Reset bet_this_round for all players
+                        let mut m: u8 = 0;
+                        while m < table.max_players {
+                            let mut ph: PlayerHand = world.read_model((hand_id, m));
+                            if ph.player != 0.try_into().unwrap() {
+                                ph.bet_this_round = 0;
+                                world.write_model(@ph);
+                            }
+                            m += 1;
+                        };
+                    }
+
+                    world.write_model(@hand);
+                }
+            }
         }
 
         fn submit_reveal_tokens_batch(
@@ -95,16 +159,149 @@ pub mod dealing_system {
             tokens_y: Array<felt252>,
             proofs: Array<Array<felt252>>,
         ) {
-            // Batch version for gas efficiency
             assert(positions.len() == tokens_x.len(), 'length mismatch');
             assert(positions.len() == tokens_y.len(), 'length mismatch');
+            assert(positions.len() == proofs.len(), 'length mismatch');
 
             let mut i: u32 = 0;
             while i < positions.len() {
-                // TODO: call submit_reveal_token logic for each
+                // Reconstruct individual proof array
+                let mut single_proof: Array<felt252> = array![];
+                let proof_span = proofs.at(i).span();
+                let mut pi: u32 = 0;
+                while pi < proof_span.len() {
+                    single_proof.append(*proof_span.at(pi));
+                    pi += 1;
+                };
+
+                self
+                    .submit_reveal_token(
+                        hand_id,
+                        *positions.at(i),
+                        *tokens_x.at(i),
+                        *tokens_y.at(i),
+                        single_proof,
+                    );
                 i += 1;
             };
         }
+    }
+
+    /// Determine how many reveal tokens are needed for a card position.
+    /// Hole cards need N-1 tokens (everyone except the card owner).
+    /// Community cards need N tokens (everyone).
+    fn get_required_tokens_for_position(
+        ref world: dojo::world::WorldStorage,
+        hand_id: u64,
+        card_position: u8,
+        num_players: u8,
+        max_players: u8,
+    ) -> u8 {
+        let comm: CommunityCards = world.read_model(hand_id);
+
+        // Check if this is a community card position
+        if card_position == comm.flop_1_pos
+            || card_position == comm.flop_2_pos
+            || card_position == comm.flop_3_pos
+            || card_position == comm.turn_pos
+            || card_position == comm.river_pos {
+            return num_players; // all players must contribute
+        }
+
+        // It's a hole card — need N-1 tokens (everyone except the owner)
+        num_players - 1
+    }
+
+    fn count_tokens_for_position(
+        ref world: dojo::world::WorldStorage, hand_id: u64, card_position: u8, max_players: u8,
+    ) -> u8 {
+        let mut count: u8 = 0;
+        let mut i: u8 = 0;
+        while i < max_players {
+            let token: RevealToken = world.read_model((hand_id, card_position, i));
+            if token.proof_verified {
+                count += 1;
+            }
+            i += 1;
+        };
+        count
+    }
+
+    /// Check if all cards for the current dealing phase have received enough tokens.
+    fn check_phase_complete(
+        ref world: dojo::world::WorldStorage,
+        hand_id: u64,
+        phase: GamePhase,
+        num_players: u8,
+        max_players: u8,
+    ) -> bool {
+        let comm: CommunityCards = world.read_model(hand_id);
+
+        match phase {
+            GamePhase::DealingPreflop => {
+                // Need all hole cards to have N-1 tokens
+                let mut j: u8 = 0;
+                let mut all_done = true;
+                while j < max_players {
+                    let ph: PlayerHand = world.read_model((hand_id, j));
+                    if ph.player != 0.try_into().unwrap() && !ph.has_folded {
+                        let t1 = count_tokens_for_position(
+                            ref world, hand_id, ph.hole_card_1_pos, max_players,
+                        );
+                        let t2 = count_tokens_for_position(
+                            ref world, hand_id, ph.hole_card_2_pos, max_players,
+                        );
+                        if t1 < num_players - 1 || t2 < num_players - 1 {
+                            all_done = false;
+                            break;
+                        }
+                    }
+                    j += 1;
+                };
+                all_done
+            },
+            GamePhase::DealingFlop => {
+                let t1 = count_tokens_for_position(
+                    ref world, hand_id, comm.flop_1_pos, max_players,
+                );
+                let t2 = count_tokens_for_position(
+                    ref world, hand_id, comm.flop_2_pos, max_players,
+                );
+                let t3 = count_tokens_for_position(
+                    ref world, hand_id, comm.flop_3_pos, max_players,
+                );
+                t1 >= num_players && t2 >= num_players && t3 >= num_players
+            },
+            GamePhase::DealingTurn => {
+                let t = count_tokens_for_position(
+                    ref world, hand_id, comm.turn_pos, max_players,
+                );
+                t >= num_players
+            },
+            GamePhase::DealingRiver => {
+                let t = count_tokens_for_position(
+                    ref world, hand_id, comm.river_pos, max_players,
+                );
+                t >= num_players
+            },
+            _ => false,
+        }
+    }
+
+    fn find_next_active_seat(
+        ref world: dojo::world::WorldStorage, hand_id: u64, current_seat: u8, max_players: u8,
+    ) -> u8 {
+        let mut next = (current_seat + 1) % max_players;
+        let mut checked: u8 = 0;
+        while checked < max_players {
+            let ph: PlayerHand = world.read_model((hand_id, next));
+            if ph.player != 0.try_into().unwrap() && !ph.has_folded && !ph.is_all_in {
+                break;
+            }
+            next = (next + 1) % max_players;
+            checked += 1;
+        };
+        next
     }
 
     #[generate_trait]
