@@ -1,7 +1,21 @@
 "use client";
 
 import { useCallback } from "react";
+import { Contract, AccountInterface, CallData } from "starknet";
 import { PlayerAction } from "@/lib/constants";
+import { WORLD_ADDRESS, NAMESPACE } from "@/lib/dojo-config";
+
+// Contract addresses are set after deployment
+// In production these come from the manifest or env vars
+const CONTRACTS: Record<string, string> = {
+  lobby: process.env.NEXT_PUBLIC_LOBBY_ADDRESS || "",
+  betting: process.env.NEXT_PUBLIC_BETTING_ADDRESS || "",
+  game_setup: process.env.NEXT_PUBLIC_GAME_SETUP_ADDRESS || "",
+  shuffle: process.env.NEXT_PUBLIC_SHUFFLE_ADDRESS || "",
+  dealing: process.env.NEXT_PUBLIC_DEALING_ADDRESS || "",
+  showdown: process.env.NEXT_PUBLIC_SHOWDOWN_ADDRESS || "",
+  settle: process.env.NEXT_PUBLIC_SETTLE_ADDRESS || "",
+};
 
 interface UsePokerActionsReturn {
   submitAction: (
@@ -19,79 +33,107 @@ interface UsePokerActionsReturn {
   ) => Promise<void>;
   submitShuffle: (
     handId: number,
-    proof: Uint8Array,
     newDeck: string[],
+    proof: string[],
+    verifierAddress: string,
   ) => Promise<void>;
   submitRevealToken: (
     handId: number,
     cardPosition: number,
     tokenX: string,
     tokenY: string,
-    proof: Uint8Array,
+    proof: string[],
   ) => Promise<void>;
+  startHand: () => Promise<void>;
 }
 
-export function usePokerActions(tableId: number): UsePokerActionsReturn {
-  // TODO: Replace with actual Dojo SDK contract calls
-  // const { account } = useAccount();
-  // const { execute } = useDojo();
+// Helper: execute a Dojo system call via starknet.js
+async function executeCall(
+  account: AccountInterface | null,
+  contractAddress: string,
+  entrypoint: string,
+  calldata: (string | number | bigint)[],
+) {
+  if (!account) {
+    console.warn(`No account connected, logging: ${entrypoint}(${calldata})`);
+    return;
+  }
+  if (!contractAddress) {
+    console.warn(`Contract address not set for ${entrypoint}, logging only`);
+    return;
+  }
+  const result = await account.execute({
+    contractAddress,
+    entrypoint,
+    calldata: CallData.compile(calldata.map(String)),
+  });
+  console.log(`TX: ${entrypoint} -> ${result.transaction_hash}`);
+  return result;
+}
 
+export function usePokerActions(
+  tableId: number,
+  account?: AccountInterface | null,
+): UsePokerActionsReturn {
   const submitAction = useCallback(
     async (handId: number, action: PlayerAction, amount: bigint) => {
-      console.log(
-        `[Table ${tableId}] Action: hand=${handId} action=${PlayerAction[action]} amount=${amount}`,
-      );
-      // await execute("pokerstarks", "betting_system", "player_action", [
-      //   handId, action, amount
-      // ]);
+      await executeCall(account ?? null, CONTRACTS.betting, "player_action", [
+        handId,
+        action,
+        amount,
+      ]);
     },
-    [tableId],
+    [account],
   );
 
   const setReady = useCallback(async () => {
-    console.log(`[Table ${tableId}] Set ready`);
-    // await execute("pokerstarks", "lobby_system", "set_ready", [tableId]);
-  }, [tableId]);
+    await executeCall(account ?? null, CONTRACTS.lobby, "set_ready", [tableId]);
+  }, [tableId, account]);
 
   const joinTable = useCallback(
     async (seatIndex: number, buyIn: bigint) => {
-      console.log(
-        `[Table ${tableId}] Join: seat=${seatIndex} buyIn=${buyIn}`,
-      );
-      // await execute("pokerstarks", "lobby_system", "join_table", [
-      //   tableId, seatIndex, buyIn
-      // ]);
+      await executeCall(account ?? null, CONTRACTS.lobby, "join_table", [
+        tableId,
+        buyIn,
+        seatIndex,
+      ]);
     },
-    [tableId],
+    [tableId, account],
   );
 
   const leaveTable = useCallback(async () => {
-    console.log(`[Table ${tableId}] Leave`);
-    // await execute("pokerstarks", "lobby_system", "leave_table", [tableId]);
-  }, [tableId]);
+    await executeCall(account ?? null, CONTRACTS.lobby, "leave_table", [
+      tableId,
+    ]);
+  }, [tableId, account]);
 
   const submitPublicKey = useCallback(
     async (handId: number, pkX: string, pkY: string) => {
-      console.log(
-        `[Table ${tableId}] Submit PK: hand=${handId}`,
+      await executeCall(
+        account ?? null,
+        CONTRACTS.game_setup,
+        "submit_public_key",
+        [handId, pkX, pkY],
       );
-      // await execute("pokerstarks", "game_setup_system", "submit_public_key", [
-      //   handId, pkX, pkY
-      // ]);
     },
-    [tableId],
+    [account],
   );
 
   const submitShuffle = useCallback(
-    async (handId: number, proof: Uint8Array, newDeck: string[]) => {
-      console.log(
-        `[Table ${tableId}] Submit shuffle: hand=${handId} deckLen=${newDeck.length}`,
+    async (
+      handId: number,
+      newDeck: string[],
+      proof: string[],
+      verifierAddress: string,
+    ) => {
+      await executeCall(
+        account ?? null,
+        CONTRACTS.shuffle,
+        "submit_shuffle",
+        [handId, ...newDeck, ...proof, verifierAddress],
       );
-      // await execute("pokerstarks", "shuffle_system", "submit_shuffle", [
-      //   handId, proof, newDeck
-      // ]);
     },
-    [tableId],
+    [account],
   );
 
   const submitRevealToken = useCallback(
@@ -100,17 +142,23 @@ export function usePokerActions(tableId: number): UsePokerActionsReturn {
       cardPosition: number,
       tokenX: string,
       tokenY: string,
-      proof: Uint8Array,
+      proof: string[],
     ) => {
-      console.log(
-        `[Table ${tableId}] Submit reveal: hand=${handId} pos=${cardPosition}`,
+      await executeCall(
+        account ?? null,
+        CONTRACTS.dealing,
+        "submit_reveal_token",
+        [handId, cardPosition, tokenX, tokenY, ...proof],
       );
-      // await execute("pokerstarks", "dealing_system", "submit_reveal_token", [
-      //   handId, cardPosition, tokenX, tokenY, proof
-      // ]);
     },
-    [tableId],
+    [account],
   );
+
+  const startHand = useCallback(async () => {
+    await executeCall(account ?? null, CONTRACTS.game_setup, "start_hand", [
+      tableId,
+    ]);
+  }, [tableId, account]);
 
   return {
     submitAction,
@@ -120,5 +168,6 @@ export function usePokerActions(tableId: number): UsePokerActionsReturn {
     submitPublicKey,
     submitShuffle,
     submitRevealToken,
+    startHand,
   };
 }

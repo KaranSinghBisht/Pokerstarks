@@ -1,15 +1,20 @@
 #[starknet::interface]
 pub trait IShuffle<T> {
     fn submit_shuffle(
-        ref self: T, hand_id: u64, new_deck: Array<felt252>, proof: Array<felt252>,
+        ref self: T,
+        hand_id: u64,
+        new_deck: Array<felt252>,
+        proof: Array<felt252>,
+        verifier_address: starknet::ContractAddress,
     );
 }
 
 #[dojo::contract]
 pub mod shuffle_system {
     use dojo::model::ModelStorage;
-    use starknet::{get_caller_address, get_block_timestamp};
+    use starknet::{get_caller_address, get_block_timestamp, ContractAddress};
     use super::IShuffle;
+    use crate::systems::game_setup::{IVerifierDispatcher, IVerifierDispatcherTrait};
     use crate::models::hand::Hand;
     use crate::models::deck::EncryptedDeck;
     use crate::models::table::Seat;
@@ -22,6 +27,7 @@ pub mod shuffle_system {
             hand_id: u64,
             new_deck: Array<felt252>,
             proof: Array<felt252>,
+            verifier_address: ContractAddress,
         ) {
             let mut world = self.world_default();
             let caller = get_caller_address();
@@ -37,10 +43,10 @@ pub mod shuffle_system {
             // Validate deck size: 52 cards * 4 coordinates = 208 felt252s
             assert(new_deck.len() == 208, 'invalid deck size');
 
-            // TODO: Verify ZK proof via Garaga verifier contract
-            // let verifier = IUltraKeccakZKHonkVerifierDispatcher { ... };
-            // let result = verifier.verify_ultra_keccak_zk_honk_proof(proof.span());
-            // assert(result.is_ok(), 'invalid shuffle proof');
+            // Verify ZK proof via Garaga verifier contract
+            let verifier = IVerifierDispatcher { contract_address: verifier_address };
+            let result = verifier.verify_ultra_keccak_zk_honk_proof(proof.span());
+            assert(result.is_ok(), 'invalid shuffle proof');
 
             // Store the new deck
             let deck = EncryptedDeck {

@@ -169,8 +169,8 @@ pub mod lobby_system {
             };
 
             if all_ready && ready_count >= 2 {
-                // TODO: trigger hand start (Phase 4)
-                // For now, just mark table as in progress
+                // Mark table as in progress — client then calls
+                // game_setup_system::start_hand(table_id) to begin the hand
                 let mut table: Table = world.read_model(table_id);
                 table.state = TableState::InProgress;
                 world.write_model(@table);

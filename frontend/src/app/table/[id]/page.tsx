@@ -1,24 +1,25 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import PokerTable from "@/components/poker/PokerTable";
 import ChatPanel from "@/components/poker/ChatPanel";
 import { useGame } from "@/hooks/useGame";
 import { usePokerActions } from "@/hooks/usePokerActions";
+import { useStarknet } from "@/providers/StarknetProvider";
 import { PlayerAction } from "@/lib/constants";
 
 export default function TablePage() {
   const params = useParams();
   const tableId = Number(params.id);
+  const { address } = useStarknet();
 
   const { table, seats, hand, playerHands, communityCards, loading } =
     useGame(tableId);
   const { submitAction, setReady, joinTable } = usePokerActions(tableId);
 
-  // TODO: Replace with actual wallet address from Cartridge Controller
-  const [localAddress] = useState<string>("");
+  const localAddress = address || "";
 
   const handleAction = useCallback(
     (action: PlayerAction, amount: bigint) => {

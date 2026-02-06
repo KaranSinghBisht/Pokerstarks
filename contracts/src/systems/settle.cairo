@@ -22,14 +22,14 @@ pub mod settle_system {
 
             let table: Table = world.read_model(hand.table_id);
 
-            // Find winner(s)
-            // Case 1: Only one player left (everyone else folded)
-            if hand.active_players == 1 {
+            // Distribute remaining pot (if any)
+            // - Fold-win: pot > 0, find the last standing player
+            // - Showdown: compute_winner already awarded pot and set it to 0
+            if hand.pot > 0 {
                 let mut i: u8 = 0;
                 while i < table.max_players {
                     let ph: PlayerHand = world.read_model((hand_id, i));
                     if ph.player != 0.try_into().unwrap() && !ph.has_folded {
-                        // Award pot to the last player standing
                         let mut winner_seat: Seat = world.read_model((hand.table_id, i));
                         winner_seat.chips += hand.pot;
                         world.write_model(@winner_seat);
@@ -38,8 +38,6 @@ pub mod settle_system {
                     i += 1;
                 };
             }
-            // Case 2: Showdown — winner determined by hand evaluator
-            // TODO: implement showdown pot distribution
 
             // Reset hand state
             hand.pot = 0;
