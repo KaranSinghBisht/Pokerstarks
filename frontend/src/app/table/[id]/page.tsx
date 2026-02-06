@@ -13,11 +13,11 @@ import { PlayerAction } from "@/lib/constants";
 export default function TablePage() {
   const params = useParams();
   const tableId = Number(params.id);
-  const { address } = useStarknet();
+  const { address, account } = useStarknet();
 
   const { table, seats, hand, playerHands, communityCards, loading } =
     useGame(tableId);
-  const { submitAction, setReady, joinTable } = usePokerActions(tableId);
+  const { submitAction, setReady, joinTable } = usePokerActions(tableId, account);
 
   const localAddress = address || "";
 

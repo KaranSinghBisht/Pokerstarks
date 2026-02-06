@@ -85,13 +85,18 @@ export default function BettingControls({
           />
           <button
             onClick={() => {
-              const amt = BigInt(betAmount || "0");
-              if (amt >= minRaise) {
-                onAction(
-                  currentBet > 0n ? PlayerAction.Raise : PlayerAction.Bet,
-                  amt,
-                );
-                setBetAmount("");
+              try {
+                const raw = betAmount.replace(/[^0-9]/g, "");
+                const amt = BigInt(raw || "0");
+                if (amt >= minRaise) {
+                  onAction(
+                    currentBet > 0n ? PlayerAction.Raise : PlayerAction.Bet,
+                    amt,
+                  );
+                  setBetAmount("");
+                }
+              } catch {
+                // Invalid input — ignore (e.g. empty string, decimals)
               }
             }}
             className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold transition-colors"

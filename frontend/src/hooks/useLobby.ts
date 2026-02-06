@@ -79,6 +79,8 @@ export function useLobby(): UseLobbyReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sdkRef = useRef<Awaited<ReturnType<typeof init<DojoSchema>>> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subscriptionRef = useRef<any>(null);
 
   const loadTables = useCallback(async () => {
     try {
@@ -116,8 +118,13 @@ export function useLobby(): UseLobbyReturn {
       setTables(parsed.length > 0 ? parsed : MOCK_TABLES);
       setLoading(false);
 
+      // Clean up previous subscription if any
+      if (subscriptionRef.current) {
+        try { subscriptionRef.current.cancel?.(); } catch { /* ignore */ }
+      }
+
       // Subscribe to new table creations
-      await sdk.subscribeEntityQuery({
+      subscriptionRef.current = await sdk.subscribeEntityQuery({
         query: new ToriiQueryBuilder<DojoSchema>()
           .withClause(KeysClause([`${NAMESPACE}-Table`], []).build()),
         callback: ({ data }) => {
@@ -150,6 +157,12 @@ export function useLobby(): UseLobbyReturn {
 
   useEffect(() => {
     loadTables();
+    return () => {
+      if (subscriptionRef.current) {
+        try { subscriptionRef.current.cancel?.(); } catch { /* ignore */ }
+        subscriptionRef.current = null;
+      }
+    };
   }, [loadTables]);
 
   const createTable = useCallback(

@@ -13,8 +13,9 @@ export default function ChatPanel({ tableId }: ChatPanelProps) {
   const [showEmotes, setShowEmotes] = useState(false);
 
   const handleSend = () => {
-    if (!input.trim()) return;
-    sendMessage(input.trim());
+    const trimmed = input.trim().slice(0, 200); // Limit message length
+    if (!trimmed) return;
+    sendMessage(trimmed);
     setInput("");
   };
 
@@ -86,6 +87,7 @@ export default function ChatPanel({ tableId }: ChatPanelProps) {
         <input
           type="text"
           value={input}
+          maxLength={200}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           placeholder="Type a message..."

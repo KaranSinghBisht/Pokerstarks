@@ -23,6 +23,7 @@ pub mod dealing_system {
     use dojo::model::ModelStorage;
     use starknet::{get_caller_address, get_block_timestamp};
     use super::IDealing;
+    use crate::systems::game_setup::{IVerifierDispatcher, IVerifierDispatcherTrait};
     use crate::models::hand::{Hand, PlayerHand};
     use crate::models::card::{RevealToken, CommunityCards};
     use crate::models::table::{Table, Seat};
@@ -65,13 +66,20 @@ pub mod dealing_system {
             };
             assert(seat_idx != 255, 'player not at table');
 
+            // Check the player hasn't folded
+            let caller_ph: PlayerHand = world.read_model((hand_id, seat_idx));
+            assert(!caller_ph.has_folded, 'player has folded');
+
             // Check token hasn't been submitted already
             let existing: RevealToken = world.read_model((hand_id, card_position, seat_idx));
             assert(!existing.proof_verified, 'token already submitted');
 
-            // TODO: Verify proof via Garaga decrypt verifier
-            // For hackathon MVP, accept all tokens (proof verification adds gas cost,
-            // and the off-chain client generates honest proofs)
+            // Verify proof via Garaga decrypt verifier stored on the table
+            let verifier = IVerifierDispatcher {
+                contract_address: table.decrypt_verifier,
+            };
+            let result = verifier.verify_ultra_keccak_zk_honk_proof(proof.span());
+            assert(result.is_ok(), 'invalid decrypt proof');
 
             // Store the reveal token
             let token = RevealToken {

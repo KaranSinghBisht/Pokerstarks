@@ -1,9 +1,11 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react";
+import type { AccountInterface } from "starknet";
 
 interface StarknetContextType {
   address: string | null;
+  account: AccountInterface | null;
   isConnected: boolean;
   connecting: boolean;
   connect: () => Promise<void>;
@@ -12,6 +14,7 @@ interface StarknetContextType {
 
 const StarknetContext = createContext<StarknetContextType>({
   address: null,
+  account: null,
   isConnected: false,
   connecting: false,
   connect: async () => {},
@@ -25,25 +28,19 @@ export function useStarknet() {
 export function StarknetProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const accountRef = useRef<AccountInterface | null>(null);
 
   const connect = useCallback(async () => {
     // TODO: Replace with Cartridge Controller connection
-    // import { CartridgeSessionProvider } from "@cartridge/controller";
-    // const controller = new Controller({
-    //   rpc: TORII_RPC_URL,
-    //   policies: [
-    //     { target: WORLD_ADDRESS, method: "create_table" },
-    //     { target: WORLD_ADDRESS, method: "join_table" },
-    //     { target: WORLD_ADDRESS, method: "set_ready" },
-    //     { target: WORLD_ADDRESS, method: "player_action" },
-    //     { target: WORLD_ADDRESS, method: "submit_public_key" },
-    //     { target: WORLD_ADDRESS, method: "submit_shuffle" },
-    //     { target: WORLD_ADDRESS, method: "submit_reveal_token" },
-    //   ],
-    // });
+    // When Cartridge Controller is integrated, it returns an AccountInterface:
+    //   const controller = new Controller({ rpc, policies });
+    //   const account = await controller.connect();
+    //   accountRef.current = account;
+    //   setAddress(account.address);
     setConnecting(true);
     try {
-      // Mock connection for now
+      // Mock connection for now — no real AccountInterface available
+      // In production, accountRef.current would be set to the Cartridge account
       setAddress("0x1234567890abcdef1234567890abcdef12345678");
     } finally {
       setConnecting(false);
@@ -52,12 +49,14 @@ export function StarknetProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(() => {
     setAddress(null);
+    accountRef.current = null;
   }, []);
 
   return (
     <StarknetContext.Provider
       value={{
         address,
+        account: accountRef.current,
         isConnected: !!address,
         connecting,
         connect,

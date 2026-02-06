@@ -158,6 +158,8 @@ export function useGame(tableId: number): UseGameReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sdkRef = useRef<Awaited<ReturnType<typeof init<DojoSchema>>> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subscriptionRef = useRef<any>(null);
 
   const loadFromTorii = useCallback(async () => {
     try {
@@ -212,8 +214,13 @@ export function useGame(tableId: number): UseGameReturn {
       }
       setSeats(seatList);
 
+      // Clean up previous subscription if any
+      if (subscriptionRef.current) {
+        try { subscriptionRef.current.cancel?.(); } catch { /* ignore */ }
+      }
+
       // Subscribe to entity updates for real-time changes
-      await sdk.subscribeEntityQuery({
+      subscriptionRef.current = await sdk.subscribeEntityQuery({
         query: new ToriiQueryBuilder<DojoSchema>()
           .withClause(
             KeysClause([`${NAMESPACE}-Table`], [String(tableId)]).build()
@@ -281,6 +288,12 @@ export function useGame(tableId: number): UseGameReturn {
 
   useEffect(() => {
     loadFromTorii();
+    return () => {
+      if (subscriptionRef.current) {
+        try { subscriptionRef.current.cancel?.(); } catch { /* ignore */ }
+        subscriptionRef.current = null;
+      }
+    };
   }, [loadFromTorii]);
 
   return {

@@ -17,6 +17,9 @@ pub struct Table {
     pub dealer_seat: u8,
     pub player_count: u8,
     pub created_at: u64,
+    // Garaga verifier contract addresses (set at table creation)
+    pub shuffle_verifier: ContractAddress,
+    pub decrypt_verifier: ContractAddress,
 }
 
 #[derive(Copy, Drop, Serde, Debug)]

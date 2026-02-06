@@ -15,6 +15,15 @@ fn scalar_mul(point: EmbeddedCurvePoint, scalar: Field) -> EmbeddedCurvePoint {
     multi_scalar_mul([point], [s])
 }
 
+/// Validate that a point is on the Grumpkin curve: y^2 = x^3 - 17
+fn assert_on_curve(p: EmbeddedCurvePoint) {
+    if !p.is_infinite {
+        let y_sq = p.y * p.y;
+        let x_cu = p.x * p.x * p.x;
+        assert(y_sq == x_cu - 17, "point not on curve");
+    }
+}
+
 fn main(
     // Private input
     secret_key: Field,
@@ -30,6 +39,14 @@ fn main(
 ) {
     let g = EmbeddedCurvePoint { x: generator_x, y: generator_y, is_infinite: false };
     let c1 = EmbeddedCurvePoint { x: c1_x, y: c1_y, is_infinite: false };
+
+    // Validate that generator and C1 are on the curve
+    assert_on_curve(g);
+    assert_on_curve(c1);
+
+    // Secret key must be non-zero (sk=0 would make PK=infinity and T=infinity,
+    // which is a trivially forgeable proof)
+    assert(secret_key != 0, "secret key must be non-zero");
 
     // Verify PK = sk * G
     let computed_pk = scalar_mul(g, secret_key);

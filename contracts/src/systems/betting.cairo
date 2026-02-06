@@ -112,8 +112,24 @@ pub mod betting_system {
                     let all_in_amount = player_seat.chips;
                     let total_bet = ph.bet_this_round + all_in_amount;
 
+                    // If this all-in raises above current bet, reset has_acted for others
                     if total_bet > hand.current_bet {
                         hand.current_bet = total_bet;
+                        // Reset has_acted for other active players since bet changed
+                        let mut k: u8 = 0;
+                        while k < table.max_players {
+                            if k != hand.current_turn_seat {
+                                let mut other_ph: PlayerHand = world
+                                    .read_model((hand_id, k));
+                                if other_ph.player != ZERO_ADDR.try_into().unwrap()
+                                    && !other_ph.has_folded
+                                    && !other_ph.is_all_in {
+                                    other_ph.has_acted = false;
+                                    world.write_model(@other_ph);
+                                }
+                            }
+                            k += 1;
+                        };
                     }
 
                     ph.bet_this_round = total_bet;

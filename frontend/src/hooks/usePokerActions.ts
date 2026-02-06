@@ -35,7 +35,6 @@ interface UsePokerActionsReturn {
     handId: number,
     newDeck: string[],
     proof: string[],
-    verifierAddress: string,
   ) => Promise<void>;
   submitRevealToken: (
     handId: number,
@@ -124,13 +123,12 @@ export function usePokerActions(
       handId: number,
       newDeck: string[],
       proof: string[],
-      verifierAddress: string,
     ) => {
       await executeCall(
         account ?? null,
         CONTRACTS.shuffle,
         "submit_shuffle",
-        [handId, ...newDeck, ...proof, verifierAddress],
+        [handId, ...newDeck, ...proof],
       );
     },
     [account],

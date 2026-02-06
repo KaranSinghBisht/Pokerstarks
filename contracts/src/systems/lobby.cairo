@@ -7,6 +7,8 @@ pub trait ILobby<T> {
         big_blind: u128,
         min_buy_in: u128,
         max_buy_in: u128,
+        shuffle_verifier: starknet::ContractAddress,
+        decrypt_verifier: starknet::ContractAddress,
     ) -> u64;
     fn join_table(ref self: T, table_id: u64, buy_in: u128, preferred_seat: u8);
     fn leave_table(ref self: T, table_id: u64);
@@ -16,7 +18,7 @@ pub trait ILobby<T> {
 #[dojo::contract]
 pub mod lobby_system {
     use dojo::model::ModelStorage;
-    use starknet::{get_caller_address, get_block_timestamp};
+    use starknet::{get_caller_address, get_block_timestamp, ContractAddress};
     use super::ILobby;
     use crate::models::table::{Table, Seat, TableCounter};
     use crate::models::enums::TableState;
@@ -30,6 +32,8 @@ pub mod lobby_system {
             big_blind: u128,
             min_buy_in: u128,
             max_buy_in: u128,
+            shuffle_verifier: ContractAddress,
+            decrypt_verifier: ContractAddress,
         ) -> u64 {
             let mut world = self.world_default();
             let caller = get_caller_address();
@@ -40,6 +44,9 @@ pub mod lobby_system {
             assert(small_blind > 0 && small_blind <= big_blind, 'invalid blinds');
             assert(min_buy_in >= big_blind * 10, 'min_buy_in too low');
             assert(max_buy_in >= min_buy_in, 'max < min buy_in');
+            // Verifier addresses must be non-zero
+            assert(shuffle_verifier != 0.try_into().unwrap(), 'invalid shuffle verifier');
+            assert(decrypt_verifier != 0.try_into().unwrap(), 'invalid decrypt verifier');
 
             // Get next table ID
             let mut counter: TableCounter = world.read_model(0_u8);
@@ -61,6 +68,8 @@ pub mod lobby_system {
                 dealer_seat: 0,
                 player_count: 0,
                 created_at: get_block_timestamp(),
+                shuffle_verifier,
+                decrypt_verifier,
             };
             world.write_model(@table);
 
@@ -75,6 +84,16 @@ pub mod lobby_system {
             assert(table.state == TableState::Waiting, 'table not waiting');
             assert(buy_in >= table.min_buy_in && buy_in <= table.max_buy_in, 'invalid buy_in');
             assert(preferred_seat < table.max_players, 'invalid seat');
+
+            // Check player is not already seated at this table
+            let mut k: u8 = 0;
+            while k < table.max_players {
+                let existing: Seat = world.read_model((table_id, k));
+                if existing.is_occupied {
+                    assert(existing.player != caller, 'already seated');
+                }
+                k += 1;
+            };
 
             // Check seat is empty
             let seat: Seat = world.read_model((table_id, preferred_seat));
@@ -109,7 +128,8 @@ pub mod lobby_system {
             while i < table.max_players {
                 let seat: Seat = world.read_model((table_id, i));
                 if seat.is_occupied && seat.player == caller {
-                    // Clear the seat
+                    // NOTE: In production, chips would be transferred back via ERC20/Tongo.
+                    // For hackathon MVP, buy-ins are not backed by token deposits.
                     let empty_seat = Seat {
                         table_id,
                         seat_index: i,

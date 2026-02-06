@@ -19,6 +19,16 @@ fn point_add(p1: EmbeddedCurvePoint, p2: EmbeddedCurvePoint) -> EmbeddedCurvePoi
     multi_scalar_mul([p1, p2], [one, one])
 }
 
+/// Validate that a point is on the Grumpkin curve: y^2 = x^3 - 17
+fn assert_on_curve(p: EmbeddedCurvePoint) {
+    if !p.is_infinite {
+        let y_sq = p.y * p.y;
+        let x_cu = p.x * p.x * p.x;
+        // Grumpkin: y^2 = x^3 + b where b = -17
+        assert(y_sq == x_cu - 17, "point not on curve");
+    }
+}
+
 fn main(
     // Private inputs
     perm: [u32; N],
@@ -39,6 +49,10 @@ fn main(
 ) {
     let g = EmbeddedCurvePoint { x: generator_x, y: generator_y, is_infinite: false };
     let pk = EmbeddedCurvePoint { x: pub_key_x, y: pub_key_y, is_infinite: false };
+
+    // Validate generator and public key are on the curve
+    assert_on_curve(g);
+    assert_on_curve(pk);
 
     // 1. Verify permutation is valid
     let expected_sum: u32 = N * (N - 1) / 2;
@@ -62,8 +76,16 @@ fn main(
         let src = perm[i];
         let r = reencrypt_randomness[i];
 
+        // Ensure randomness is non-zero (r=0 would mean no re-encryption,
+        // allowing the shuffler to track cards through the shuffle)
+        assert(r != 0, "randomness must be non-zero");
+
         let in_c1 = EmbeddedCurvePoint { x: input_c1_x[src], y: input_c1_y[src], is_infinite: false };
         let in_c2 = EmbeddedCurvePoint { x: input_c2_x[src], y: input_c2_y[src], is_infinite: false };
+
+        // Validate input deck points are on the curve
+        assert_on_curve(in_c1);
+        assert_on_curve(in_c2);
 
         let r_g = scalar_mul(g, r);
         let r_pk = scalar_mul(pk, r);

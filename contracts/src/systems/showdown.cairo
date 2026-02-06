@@ -3,6 +3,8 @@ pub trait IShowdown<T> {
     /// Player reveals their hole cards by providing the card IDs
     /// (computed off-chain from the collected reveal tokens)
     fn reveal_hand(ref self: T, hand_id: u64, card_1_id: u8, card_2_id: u8);
+    /// Called by anyone to set community card IDs once reveal tokens are collected
+    fn set_community_cards(ref self: T, hand_id: u64, flop_1: u8, flop_2: u8, flop_3: u8, turn_card: u8, river_card: u8);
     /// Called after all remaining players have revealed to determine the winner
     fn compute_winner(ref self: T, hand_id: u64);
 }
@@ -50,12 +52,100 @@ pub mod showdown_system {
             assert(card_1_id < 52 && card_2_id < 52, 'invalid card id');
             assert(card_1_id != card_2_id, 'cards must be different');
 
+            // Check these cards aren't claimed by another player
+            let mut j: u8 = 0;
+            while j < table.max_players {
+                if j != seat_idx {
+                    let other_ph: PlayerHand = world.read_model((hand_id, j));
+                    if other_ph.player != 0.try_into().unwrap()
+                        && other_ph.hole_card_1_id != CARD_NOT_DEALT {
+                        assert(
+                            other_ph.hole_card_1_id != card_1_id
+                                && other_ph.hole_card_1_id != card_2_id
+                                && other_ph.hole_card_2_id != card_1_id
+                                && other_ph.hole_card_2_id != card_2_id,
+                            'card already claimed',
+                        );
+                    }
+                }
+                j += 1;
+            };
+
+            // Check cards don't conflict with community cards
+            let comm: CommunityCards = world.read_model(hand_id);
+            if comm.flop_1 != CARD_NOT_DEALT {
+                assert(
+                    card_1_id != comm.flop_1 && card_1_id != comm.flop_2
+                        && card_1_id != comm.flop_3 && card_1_id != comm.turn
+                        && card_1_id != comm.river,
+                    'card conflicts community',
+                );
+                assert(
+                    card_2_id != comm.flop_1 && card_2_id != comm.flop_2
+                        && card_2_id != comm.flop_3 && card_2_id != comm.turn
+                        && card_2_id != comm.river,
+                    'card conflicts community',
+                );
+            }
+
             // Store revealed card IDs
-            // In production: these would be verified against the decrypt tokens
             // The off-chain client computes: M = C2 - sum(tokens) and maps M back to card_id
             ph.hole_card_1_id = card_1_id;
             ph.hole_card_2_id = card_2_id;
             world.write_model(@ph);
+        }
+
+        /// Set community card IDs. Called by any participant once the reveal tokens
+        /// have been submitted for each community card position. The client decrypts
+        /// the cards off-chain and submits the results.
+        fn set_community_cards(
+            ref self: ContractState,
+            hand_id: u64,
+            flop_1: u8,
+            flop_2: u8,
+            flop_3: u8,
+            turn_card: u8,
+            river_card: u8,
+        ) {
+            let mut world = self.world_default();
+            let caller = get_caller_address();
+
+            let hand: Hand = world.read_model(hand_id);
+            assert(hand.phase == GamePhase::Showdown, 'not showdown phase');
+
+            // Verify caller is a seated player
+            let table: Table = world.read_model(hand.table_id);
+            let mut is_player = false;
+            let mut i: u8 = 0;
+            while i < table.max_players {
+                let seat: Seat = world.read_model((hand.table_id, i));
+                if seat.is_occupied && seat.player == caller {
+                    is_player = true;
+                    break;
+                }
+                i += 1;
+            };
+            assert(is_player, 'not a table player');
+
+            let mut comm: CommunityCards = world.read_model(hand_id);
+            assert(comm.flop_1 == CARD_NOT_DEALT, 'community already set');
+
+            // Validate all card IDs
+            assert(flop_1 < 52 && flop_2 < 52 && flop_3 < 52, 'invalid card id');
+            assert(turn_card < 52 && river_card < 52, 'invalid card id');
+
+            // Ensure all 5 community cards are distinct
+            assert(flop_1 != flop_2 && flop_1 != flop_3 && flop_1 != turn_card && flop_1 != river_card, 'duplicate community card');
+            assert(flop_2 != flop_3 && flop_2 != turn_card && flop_2 != river_card, 'duplicate community card');
+            assert(flop_3 != turn_card && flop_3 != river_card, 'duplicate community card');
+            assert(turn_card != river_card, 'duplicate community card');
+
+            comm.flop_1 = flop_1;
+            comm.flop_2 = flop_2;
+            comm.flop_3 = flop_3;
+            comm.turn = turn_card;
+            comm.river = river_card;
+            world.write_model(@comm);
         }
 
         fn compute_winner(ref self: ContractState, hand_id: u64) {

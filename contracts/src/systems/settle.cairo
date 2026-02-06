@@ -55,10 +55,20 @@ pub mod settle_system {
                 j += 1;
             };
 
-            // Advance dealer button
+            // Advance dealer button (skip empty seats)
             let mut new_table: Table = world.read_model(hand.table_id);
             new_table.state = crate::models::enums::TableState::Waiting;
-            new_table.dealer_seat = (new_table.dealer_seat + 1) % table.max_players;
+            let mut next_dealer = (new_table.dealer_seat + 1) % table.max_players;
+            let mut checked: u8 = 0;
+            while checked < table.max_players {
+                let s: Seat = world.read_model((hand.table_id, next_dealer));
+                if s.is_occupied {
+                    break;
+                }
+                next_dealer = (next_dealer + 1) % table.max_players;
+                checked += 1;
+            };
+            new_table.dealer_seat = next_dealer;
             world.write_model(@new_table);
         }
     }
