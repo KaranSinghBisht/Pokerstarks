@@ -1,43 +1,18 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import PokerTable from "@/components/poker/PokerTable";
 import ChatPanel from "@/components/poker/ChatPanel";
 import { useGame } from "@/hooks/useGame";
-import { usePokerActions } from "@/hooks/usePokerActions";
 import { PlayerAction } from "@/lib/constants";
 
-export default function TablePage() {
+export default function SpectatePage() {
   const params = useParams();
   const tableId = Number(params.id);
 
   const { table, seats, hand, playerHands, communityCards, loading } =
     useGame(tableId);
-  const { submitAction, setReady, joinTable } = usePokerActions(tableId);
-
-  // TODO: Replace with actual wallet address from Cartridge Controller
-  const [localAddress] = useState<string>("");
-
-  const handleAction = useCallback(
-    (action: PlayerAction, amount: bigint) => {
-      if (!hand) return;
-      submitAction(hand.handId, action, amount);
-    },
-    [hand, submitAction],
-  );
-
-  const handleReady = useCallback(() => {
-    setReady();
-  }, [setReady]);
-
-  const handleJoin = useCallback(
-    (seatIndex: number, buyIn: bigint) => {
-      joinTable(seatIndex, buyIn);
-    },
-    [joinTable],
-  );
 
   if (loading || !table) {
     return (
@@ -65,31 +40,27 @@ export default function TablePage() {
             <h1 className="text-lg font-bold text-amber-400">
               Table #{tableId}
             </h1>
-            <span className="text-xs text-gray-500">
-              Blinds: {Number(table.smallBlind)}/{Number(table.bigBlind)}
+            <span className="text-xs bg-purple-900/50 text-purple-400 px-2 py-1 rounded">
+              Spectating
             </span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-500">
               {table.playerCount}/{table.maxPlayers} players
             </span>
-            <span
-              className={`text-xs px-2 py-1 rounded ${
-                table.state === "Waiting"
-                  ? "bg-green-900/50 text-green-400"
-                  : table.state === "InProgress"
-                    ? "bg-amber-900/50 text-amber-400"
-                    : "bg-gray-900/50 text-gray-400"
-              }`}
+            <Link
+              href={`/table/${tableId}`}
+              className="px-3 py-1.5 text-xs rounded-lg bg-green-600 hover:bg-green-500 font-medium transition-colors"
             >
-              {table.state}
-            </span>
+              Join Table
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Table area */}
+      {/* Main layout */}
       <main className="max-w-6xl mx-auto px-6 py-8 flex gap-6">
+        {/* Table - takes most space */}
         <div className="flex-1">
           <PokerTable
             table={table}
@@ -97,12 +68,14 @@ export default function TablePage() {
             hand={hand}
             playerHands={playerHands}
             communityCards={communityCards}
-            localPlayerAddress={localAddress}
-            onAction={handleAction}
-            onReady={handleReady}
-            onJoin={handleJoin}
+            localPlayerAddress={undefined}
+            onAction={(_action: PlayerAction, _amount: bigint) => {}}
+            onReady={() => {}}
+            onJoin={() => {}}
           />
         </div>
+
+        {/* Chat sidebar */}
         <div className="w-72 h-[500px]">
           <ChatPanel tableId={tableId} />
         </div>
