@@ -1,0 +1,6 @@
+[package]
+name = "shuffle_proof"
+type = "bin"
+authors = [""]
+
+[dependencies]

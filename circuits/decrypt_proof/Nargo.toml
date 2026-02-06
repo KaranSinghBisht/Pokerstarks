@@ -1,0 +1,6 @@
+[package]
+name = "decrypt_proof"
+type = "bin"
+authors = [""]
+
+[dependencies]
