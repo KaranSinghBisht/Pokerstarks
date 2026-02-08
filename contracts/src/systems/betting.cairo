@@ -66,6 +66,7 @@ pub mod betting_system {
                 },
                 PlayerAction::Bet => {
                     assert(hand.current_bet == 0, 'use raise instead');
+                    assert(amount >= table.big_blind, 'bet below minimum');
                     ph.bet_this_round = amount;
                     ph.total_bet += amount;
                     hand.current_bet = amount;
@@ -76,9 +77,25 @@ pub mod betting_system {
                     assert(player_seat.chips >= amount, 'not enough chips');
                     player_seat.chips -= amount;
                     world.write_model(@player_seat);
+
+                    // Reset has_acted for other players since there's a new bet
+                    let mut k: u8 = 0;
+                    while k < table.max_players {
+                        if k != hand.current_turn_seat {
+                            let mut other_ph: PlayerHand = world.read_model((hand_id, k));
+                            if other_ph.player != ZERO_ADDR.try_into().unwrap()
+                                && !other_ph.has_folded
+                                && !other_ph.is_all_in {
+                                other_ph.has_acted = false;
+                                world.write_model(@other_ph);
+                            }
+                        }
+                        k += 1;
+                    };
                 },
                 PlayerAction::Raise => {
-                    assert(amount > hand.current_bet, 'raise must be higher');
+                    // Minimum raise: at least current_bet + big_blind
+                    assert(amount >= hand.current_bet + table.big_blind, 'raise below minimum');
                     let raise_amount = amount - ph.bet_this_round;
                     ph.bet_this_round = amount;
                     ph.total_bet += raise_amount;

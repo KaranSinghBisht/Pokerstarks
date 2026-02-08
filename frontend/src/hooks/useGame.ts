@@ -8,14 +8,14 @@ import type {
   HandData,
   PlayerHandData,
   CommunityCardsData,
+  EncryptedDeckData,
+  RevealTokenData,
 } from "@/lib/types";
 import { WORLD_ADDRESS, TORII_URL, NAMESPACE } from "@/lib/dojo-config";
 
-// Schema definition matching our Dojo models
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DojoSchema = any;
 
-// Parse raw entity data into our typed interfaces
 function parseTable(models: Record<string, unknown>): TableData | null {
   const t = models[`${NAMESPACE}-Table`] as Record<string, unknown> | undefined;
   if (!t) return null;
@@ -63,6 +63,9 @@ function parseHand(models: Record<string, unknown>): HandData | null {
     dealerSeat: Number(h.dealer_seat),
     shuffleProgress: Number(h.shuffle_progress),
     phaseDeadline: Number(h.phase_deadline),
+    aggPubKeyX: String(h.agg_pub_key_x ?? "0"),
+    aggPubKeyY: String(h.agg_pub_key_y ?? "0"),
+    keysSubmitted: Number(h.keys_submitted),
   };
 }
 
@@ -73,11 +76,15 @@ function parsePlayerHand(models: Record<string, unknown>): PlayerHandData | null
     handId: Number(ph.hand_id),
     seatIndex: Number(ph.seat_index),
     player: String(ph.player ?? ""),
+    publicKeyX: String(ph.public_key_x ?? "0"),
+    publicKeyY: String(ph.public_key_y ?? "0"),
     betThisRound: BigInt(String(ph.bet_this_round ?? "0")),
     totalBet: BigInt(String(ph.total_bet ?? "0")),
     hasFolded: Boolean(ph.has_folded),
     hasActed: Boolean(ph.has_acted),
     isAllIn: Boolean(ph.is_all_in),
+    holeCard1Pos: Number(ph.hole_card_1_pos ?? 0),
+    holeCard2Pos: Number(ph.hole_card_2_pos ?? 0),
     holeCard1Id: Number(ph.hole_card_1_id ?? 255),
     holeCard2Id: Number(ph.hole_card_2_id ?? 255),
   };
@@ -93,6 +100,35 @@ function parseCommunityCards(models: Record<string, unknown>): CommunityCardsDat
     flop3: Number(c.flop_3 ?? 255),
     turn: Number(c.turn ?? 255),
     river: Number(c.river ?? 255),
+    flop1Pos: Number(c.flop_1_pos ?? 0),
+    flop2Pos: Number(c.flop_2_pos ?? 0),
+    flop3Pos: Number(c.flop_3_pos ?? 0),
+    turnPos: Number(c.turn_pos ?? 0),
+    riverPos: Number(c.river_pos ?? 0),
+  };
+}
+
+function parseEncryptedDeck(models: Record<string, unknown>): EncryptedDeckData | null {
+  const d = models[`${NAMESPACE}-EncryptedDeck`] as Record<string, unknown> | undefined;
+  if (!d) return null;
+  const cards = (d.cards as string[] | undefined) ?? [];
+  return {
+    handId: Number(d.hand_id),
+    version: Number(d.version),
+    cards: cards.map(String),
+  };
+}
+
+function parseRevealToken(models: Record<string, unknown>): RevealTokenData | null {
+  const t = models[`${NAMESPACE}-RevealToken`] as Record<string, unknown> | undefined;
+  if (!t) return null;
+  return {
+    handId: Number(t.hand_id),
+    cardPosition: Number(t.card_position),
+    playerSeat: Number(t.player_seat),
+    tokenX: String(t.token_x ?? "0"),
+    tokenY: String(t.token_y ?? "0"),
+    proofVerified: Boolean(t.proof_verified),
   };
 }
 
@@ -142,6 +178,8 @@ interface UseGameReturn {
   hand: HandData | undefined;
   playerHands: PlayerHandData[];
   communityCards: CommunityCardsData | undefined;
+  currentDeck: EncryptedDeckData | null;
+  revealTokens: RevealTokenData[];
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -152,9 +190,9 @@ export function useGame(tableId: number): UseGameReturn {
   const [seats, setSeats] = useState<SeatData[]>([]);
   const [hand, setHand] = useState<HandData | undefined>(undefined);
   const [playerHands, setPlayerHands] = useState<PlayerHandData[]>([]);
-  const [communityCards, setCommunityCards] = useState<
-    CommunityCardsData | undefined
-  >(undefined);
+  const [communityCards, setCommunityCards] = useState<CommunityCardsData | undefined>(undefined);
+  const [currentDeck, setCurrentDeck] = useState<EncryptedDeckData | null>(null);
+  const [revealTokens, setRevealTokens] = useState<RevealTokenData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sdkRef = useRef<Awaited<ReturnType<typeof init<DojoSchema>>> | null>(null);
@@ -214,7 +252,7 @@ export function useGame(tableId: number): UseGameReturn {
       }
       setSeats(seatList);
 
-      // Clean up previous subscription if any
+      // Clean up previous subscription
       if (subscriptionRef.current) {
         try { subscriptionRef.current.cancel?.(); } catch { /* ignore */ }
       }
@@ -235,9 +273,7 @@ export function useGame(tableId: number): UseGameReturn {
             const s = parseSeat(models);
             if (s) {
               setSeats((prev) => {
-                const idx = prev.findIndex(
-                  (x) => x.seatIndex === s.seatIndex
-                );
+                const idx = prev.findIndex((x) => x.seatIndex === s.seatIndex);
                 if (s.isOccupied) {
                   if (idx >= 0) {
                     const next = [...prev];
@@ -256,7 +292,7 @@ export function useGame(tableId: number): UseGameReturn {
             if (ph) {
               setPlayerHands((prev) => {
                 const idx = prev.findIndex(
-                  (x) => x.seatIndex === ph.seatIndex
+                  (x) => x.seatIndex === ph.seatIndex && x.handId === ph.handId
                 );
                 if (idx >= 0) {
                   const next = [...prev];
@@ -268,6 +304,30 @@ export function useGame(tableId: number): UseGameReturn {
             }
             const cc = parseCommunityCards(models);
             if (cc) setCommunityCards(cc);
+            const deck = parseEncryptedDeck(models);
+            if (deck) {
+              setCurrentDeck((prev) => {
+                if (!prev || deck.version >= prev.version) return deck;
+                return prev;
+              });
+            }
+            const rt = parseRevealToken(models);
+            if (rt) {
+              setRevealTokens((prev) => {
+                const idx = prev.findIndex(
+                  (x) =>
+                    x.handId === rt.handId &&
+                    x.cardPosition === rt.cardPosition &&
+                    x.playerSeat === rt.playerSeat
+                );
+                if (idx >= 0) {
+                  const next = [...prev];
+                  next[idx] = rt;
+                  return next;
+                }
+                return [...prev, rt];
+              });
+            }
           }
         },
       });
@@ -275,12 +335,13 @@ export function useGame(tableId: number): UseGameReturn {
       setLoading(false);
     } catch (err) {
       console.warn("Torii connection failed, using mock data:", err);
-      // Fallback to mock data
       setTable(makeMockTable(tableId));
       setSeats(makeMockSeats(tableId));
       setHand(undefined);
       setPlayerHands([]);
       setCommunityCards(undefined);
+      setCurrentDeck(null);
+      setRevealTokens([]);
       setError(null);
       setLoading(false);
     }
@@ -302,6 +363,8 @@ export function useGame(tableId: number): UseGameReturn {
     hand,
     playerHands,
     communityCards,
+    currentDeck,
+    revealTokens,
     loading,
     error,
     refresh: loadFromTorii,

@@ -5,39 +5,48 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import PokerTable from "@/components/poker/PokerTable";
 import ChatPanel from "@/components/poker/ChatPanel";
-import { useGame } from "@/hooks/useGame";
-import { usePokerActions } from "@/hooks/usePokerActions";
+import { useGameOrchestrator } from "@/hooks/useGameOrchestrator";
 import { useStarknet } from "@/providers/StarknetProvider";
 import { PlayerAction } from "@/lib/constants";
 
 export default function TablePage() {
   const params = useParams();
   const tableId = Number(params.id);
-  const { address, account } = useStarknet();
+  const { address, isConnected, connect } = useStarknet();
 
-  const { table, seats, hand, playerHands, communityCards, loading } =
-    useGame(tableId);
-  const { submitAction, setReady, joinTable } = usePokerActions(tableId, account);
+  const {
+    table,
+    seats,
+    hand,
+    playerHands,
+    communityCards,
+    loading,
+    error,
+    myHoleCards,
+    isProving,
+    provingProgress,
+    actions,
+  } = useGameOrchestrator(tableId);
 
   const localAddress = address || "";
 
   const handleAction = useCallback(
     (action: PlayerAction, amount: bigint) => {
       if (!hand) return;
-      submitAction(hand.handId, action, amount);
+      actions.submitAction(hand.handId, action, amount);
     },
-    [hand, submitAction],
+    [hand, actions],
   );
 
   const handleReady = useCallback(() => {
-    setReady();
-  }, [setReady]);
+    actions.setReady();
+  }, [actions]);
 
   const handleJoin = useCallback(
     (seatIndex: number, buyIn: bigint) => {
-      joinTable(seatIndex, buyIn);
+      actions.joinTable(seatIndex, buyIn);
     },
-    [joinTable],
+    [actions],
   );
 
   if (loading || !table) {
@@ -71,8 +80,11 @@ export default function TablePage() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            {error && (
+              <span className="text-xs text-red-400">{error}</span>
+            )}
             <span className="text-xs text-gray-500">
-              {table.playerCount}/{table.maxPlayers} players
+              {seats.length}/{table.maxPlayers} players
             </span>
             <span
               className={`text-xs px-2 py-1 rounded ${
@@ -85,6 +97,14 @@ export default function TablePage() {
             >
               {table.state}
             </span>
+            {!isConnected && (
+              <button
+                onClick={connect}
+                className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded transition-colors"
+              >
+                Connect Wallet
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -102,6 +122,9 @@ export default function TablePage() {
             onAction={handleAction}
             onReady={handleReady}
             onJoin={handleJoin}
+            myHoleCards={myHoleCards}
+            isProving={isProving}
+            provingProgress={provingProgress}
           />
         </div>
         <div className="w-72 h-[500px]">

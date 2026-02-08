@@ -208,10 +208,64 @@ pub mod showdown_system {
 
             assert(winner_seat != 255, 'no winner found');
 
-            // Award pot to winner
-            let mut winner_seat_model: Seat = world.read_model((hand.table_id, winner_seat));
-            winner_seat_model.chips += hand.pot;
-            world.write_model(@winner_seat_model);
+            // Split pot: find ALL players with the same best hand
+            let mut winner_count: u128 = 0;
+            let mut w: u8 = 0;
+            while w < table.max_players {
+                let wph: PlayerHand = world.read_model((hand_id, w));
+                if wph.player != 0.try_into().unwrap() && !wph.has_folded {
+                    let wcards = array![
+                        wph.hole_card_1_id,
+                        wph.hole_card_2_id,
+                        comm.flop_1,
+                        comm.flop_2,
+                        comm.flop_3,
+                        comm.turn,
+                        comm.river,
+                    ];
+                    let (wrank, wtb) = evaluate_best_hand(wcards.span());
+                    if wrank == best_rank && wtb == best_tb {
+                        winner_count += 1;
+                    }
+                }
+                w += 1;
+            };
+
+            // Distribute pot equally among winners (remainder to first winner)
+            let share = hand.pot / winner_count;
+            let remainder = hand.pot % winner_count;
+            let mut distributed: u128 = 0;
+            let mut first_winner = true;
+            let mut d: u8 = 0;
+            while d < table.max_players {
+                let dph: PlayerHand = world.read_model((hand_id, d));
+                if dph.player != 0.try_into().unwrap() && !dph.has_folded {
+                    let dcards = array![
+                        dph.hole_card_1_id,
+                        dph.hole_card_2_id,
+                        comm.flop_1,
+                        comm.flop_2,
+                        comm.flop_3,
+                        comm.turn,
+                        comm.river,
+                    ];
+                    let (drank, dtb) = evaluate_best_hand(dcards.span());
+                    if drank == best_rank && dtb == best_tb {
+                        let mut winner_seat_model: Seat = world
+                            .read_model((hand.table_id, d));
+                        let award = if first_winner {
+                            first_winner = false;
+                            share + remainder
+                        } else {
+                            share
+                        };
+                        winner_seat_model.chips += award;
+                        distributed += award;
+                        world.write_model(@winner_seat_model);
+                    }
+                }
+                d += 1;
+            };
 
             // Transition to settling
             hand.pot = 0;

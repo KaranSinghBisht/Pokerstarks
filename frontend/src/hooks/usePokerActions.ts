@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback } from "react";
-import { Contract, AccountInterface, CallData } from "starknet";
+import { AccountInterface, CallData } from "starknet";
 import { PlayerAction } from "@/lib/constants";
-import { WORLD_ADDRESS, NAMESPACE } from "@/lib/dojo-config";
 
 // Contract addresses are set after deployment
 // In production these come from the manifest or env vars
@@ -16,35 +15,6 @@ const CONTRACTS: Record<string, string> = {
   showdown: process.env.NEXT_PUBLIC_SHOWDOWN_ADDRESS || "",
   settle: process.env.NEXT_PUBLIC_SETTLE_ADDRESS || "",
 };
-
-interface UsePokerActionsReturn {
-  submitAction: (
-    handId: number,
-    action: PlayerAction,
-    amount: bigint,
-  ) => Promise<void>;
-  setReady: () => Promise<void>;
-  joinTable: (seatIndex: number, buyIn: bigint) => Promise<void>;
-  leaveTable: () => Promise<void>;
-  submitPublicKey: (
-    handId: number,
-    pkX: string,
-    pkY: string,
-  ) => Promise<void>;
-  submitShuffle: (
-    handId: number,
-    newDeck: string[],
-    proof: string[],
-  ) => Promise<void>;
-  submitRevealToken: (
-    handId: number,
-    cardPosition: number,
-    tokenX: string,
-    tokenY: string,
-    proof: string[],
-  ) => Promise<void>;
-  startHand: () => Promise<void>;
-}
 
 // Helper: execute a Dojo system call via starknet.js
 async function executeCall(
@@ -73,7 +43,7 @@ async function executeCall(
 export function usePokerActions(
   tableId: number,
   account?: AccountInterface | null,
-): UsePokerActionsReturn {
+) {
   const submitAction = useCallback(
     async (handId: number, action: PlayerAction, amount: bigint) => {
       await executeCall(account ?? null, CONTRACTS.betting, "player_action", [
@@ -118,17 +88,39 @@ export function usePokerActions(
     [account],
   );
 
+  const submitAggregateKey = useCallback(
+    async (handId: number, aggPkX: string, aggPkY: string) => {
+      await executeCall(
+        account ?? null,
+        CONTRACTS.game_setup,
+        "submit_aggregate_key",
+        [handId, aggPkX, aggPkY],
+      );
+    },
+    [account],
+  );
+
+  const submitInitialDeck = useCallback(
+    async (handId: number, deck: string[]) => {
+      // Cairo Array<felt252> calldata: [length, ...elements]
+      await executeCall(
+        account ?? null,
+        CONTRACTS.game_setup,
+        "submit_initial_deck",
+        [handId, deck.length, ...deck],
+      );
+    },
+    [account],
+  );
+
   const submitShuffle = useCallback(
-    async (
-      handId: number,
-      newDeck: string[],
-      proof: string[],
-    ) => {
+    async (handId: number, newDeck: string[], proof: string[]) => {
+      // Cairo Array<felt252> calldata: [length, ...elements]
       await executeCall(
         account ?? null,
         CONTRACTS.shuffle,
         "submit_shuffle",
-        [handId, ...newDeck, ...proof],
+        [handId, newDeck.length, ...newDeck, proof.length, ...proof],
       );
     },
     [account],
@@ -142,11 +134,93 @@ export function usePokerActions(
       tokenY: string,
       proof: string[],
     ) => {
+      // Cairo Array<felt252> calldata: [length, ...elements]
       await executeCall(
         account ?? null,
         CONTRACTS.dealing,
         "submit_reveal_token",
-        [handId, cardPosition, tokenX, tokenY, ...proof],
+        [handId, cardPosition, tokenX, tokenY, proof.length, ...proof],
+      );
+    },
+    [account],
+  );
+
+  const submitRevealTokensBatch = useCallback(
+    async (
+      handId: number,
+      positions: number[],
+      tokensX: string[],
+      tokensY: string[],
+      proofs: string[][],
+    ) => {
+      // Nested Array<Array<felt252>>: [outer_len, inner_len_1, ...elems_1, ...]
+      const flatProofs: (string | number)[] = [proofs.length];
+      for (const p of proofs) {
+        flatProofs.push(p.length, ...p);
+      }
+      await executeCall(
+        account ?? null,
+        CONTRACTS.dealing,
+        "submit_reveal_tokens_batch",
+        [
+          handId,
+          positions.length, ...positions,
+          tokensX.length, ...tokensX,
+          tokensY.length, ...tokensY,
+          ...flatProofs,
+        ],
+      );
+    },
+    [account],
+  );
+
+  const revealHand = useCallback(
+    async (handId: number, card1Id: number, card2Id: number) => {
+      await executeCall(
+        account ?? null,
+        CONTRACTS.showdown,
+        "reveal_hand",
+        [handId, card1Id, card2Id],
+      );
+    },
+    [account],
+  );
+
+  const setCommunityCards = useCallback(
+    async (
+      handId: number,
+      flop1: number, flop2: number, flop3: number,
+      turnCard: number, riverCard: number,
+    ) => {
+      await executeCall(
+        account ?? null,
+        CONTRACTS.showdown,
+        "set_community_cards",
+        [handId, flop1, flop2, flop3, turnCard, riverCard],
+      );
+    },
+    [account],
+  );
+
+  const computeWinner = useCallback(
+    async (handId: number) => {
+      await executeCall(
+        account ?? null,
+        CONTRACTS.showdown,
+        "compute_winner",
+        [handId],
+      );
+    },
+    [account],
+  );
+
+  const distributePot = useCallback(
+    async (handId: number) => {
+      await executeCall(
+        account ?? null,
+        CONTRACTS.settle,
+        "distribute_pot",
+        [handId],
       );
     },
     [account],
@@ -164,8 +238,15 @@ export function usePokerActions(
     joinTable,
     leaveTable,
     submitPublicKey,
+    submitAggregateKey,
+    submitInitialDeck,
     submitShuffle,
     submitRevealToken,
+    submitRevealTokensBatch,
+    revealHand,
+    setCommunityCards,
+    computeWinner,
+    distributePot,
     startHand,
   };
 }

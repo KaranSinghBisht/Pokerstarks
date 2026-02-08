@@ -10,6 +10,7 @@ pub trait IVerifier<T> {
 pub trait IGameSetup<T> {
     fn start_hand(ref self: T, table_id: u64);
     fn submit_public_key(ref self: T, hand_id: u64, pk_x: felt252, pk_y: felt252);
+    fn submit_aggregate_key(ref self: T, hand_id: u64, agg_pk_x: felt252, agg_pk_y: felt252);
     fn submit_initial_deck(ref self: T, hand_id: u64, deck: Array<felt252>);
 }
 
@@ -34,6 +35,25 @@ pub mod game_setup_system {
 
             let mut table: Table = world.read_model(table_id);
             assert(table.state == TableState::InProgress, 'table not in progress');
+
+            // Guard against duplicate start_hand calls (race condition)
+            if table.current_hand_id > 0 {
+                let existing_hand: Hand = world.read_model(table.current_hand_id);
+                // Only allow starting a new hand if no hand is actively in progress
+                assert(
+                    existing_hand.phase == GamePhase::Settling
+                        || existing_hand.phase == GamePhase::Setup,
+                    'hand already active',
+                );
+                // If the existing hand is in Setup (from a previous start_hand),
+                // prevent creating a duplicate
+                if existing_hand.phase == GamePhase::Setup {
+                    assert(
+                        existing_hand.keys_submitted == existing_hand.num_players,
+                        'hand already started',
+                    );
+                }
+            }
 
             // Get next hand ID
             let mut hand_counter: HandCounter = world.read_model(0_u8);
@@ -84,9 +104,6 @@ pub mod game_setup_system {
             world.write_model(@hand);
 
             // Create PlayerHand for each seated player
-            // Assign hole card positions in the shuffled deck:
-            //   Player at seat i gets deck positions (card_pos, card_pos+1)
-            //   Community cards at positions: after all hole cards
             let mut card_pos: u8 = 0;
             let mut j: u8 = 0;
             while j < table.max_players {
@@ -219,8 +236,28 @@ pub mod game_setup_system {
             world.write_model(@hand);
         }
 
+        /// Submit the aggregate public key (sum of all player public keys).
+        /// Computed off-chain by any player; all clients verify independently.
+        /// Must be called after all keys submitted and before first shuffle.
+        fn submit_aggregate_key(
+            ref self: ContractState,
+            hand_id: u64,
+            agg_pk_x: felt252,
+            agg_pk_y: felt252,
+        ) {
+            let mut world = self.world_default();
+
+            let mut hand: Hand = world.read_model(hand_id);
+            assert(hand.phase == GamePhase::Shuffling, 'not shuffling phase');
+            assert(hand.agg_pub_key_x == 0 && hand.agg_pub_key_y == 0, 'agg key already set');
+            assert(agg_pk_x != 0 || agg_pk_y != 0, 'invalid agg key');
+
+            hand.agg_pub_key_x = agg_pk_x;
+            hand.agg_pub_key_y = agg_pk_y;
+            world.write_model(@hand);
+        }
+
         /// Called to submit the initial encrypted deck before shuffling begins.
-        /// This is the base deck: card_i = (i+1)*G encrypted with aggregate public key.
         fn submit_initial_deck(ref self: ContractState, hand_id: u64, deck: Array<felt252>) {
             let mut world = self.world_default();
 

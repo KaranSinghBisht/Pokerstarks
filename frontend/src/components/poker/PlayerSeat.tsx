@@ -10,6 +10,8 @@ interface PlayerSeatProps {
   isDealer: boolean;
   isLocalPlayer: boolean;
   position: { top: string; left: string };
+  /** Decrypted hole card IDs from the local crypto layer (local player only) */
+  localHoleCards?: [number, number] | null;
 }
 
 export default function PlayerSeat({
@@ -19,6 +21,7 @@ export default function PlayerSeat({
   isDealer,
   isLocalPlayer,
   position,
+  localHoleCards,
 }: PlayerSeatProps) {
   if (!seat.isOccupied) {
     return (
@@ -64,15 +67,23 @@ export default function PlayerSeat({
         <span className="text-sm font-bold text-amber-400">{chips}</span>
       </div>
 
-      {/* Cards */}
+      {/* Cards — use locally decrypted cards if available, else on-chain IDs (showdown) */}
       {playerHand && !playerHand.hasFolded && (
         <div className="flex gap-0.5 -mt-1">
           <Card
-            cardId={isLocalPlayer ? playerHand.holeCard1Id : 255}
+            cardId={
+              isLocalPlayer
+                ? (localHoleCards?.[0] ?? playerHand.holeCard1Id)
+                : playerHand.holeCard1Id
+            }
             small
           />
           <Card
-            cardId={isLocalPlayer ? playerHand.holeCard2Id : 255}
+            cardId={
+              isLocalPlayer
+                ? (localHoleCards?.[1] ?? playerHand.holeCard2Id)
+                : playerHand.holeCard2Id
+            }
             small
           />
         </div>

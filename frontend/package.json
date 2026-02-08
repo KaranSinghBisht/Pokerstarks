@@ -8,9 +8,14 @@
     "start": "next start"
   },
   "dependencies": {
+    "@aztec/bb.js": "^0.82.2",
+    "@cartridge/connector": "^0.11.0",
+    "@cartridge/controller": "^0.11.3",
+    "@cartridge/presets": "^0.5.2",
     "@dojoengine/core": "^1.8.8",
     "@dojoengine/sdk": "^1.8.13",
     "@dojoengine/torii-client": "^1.8.2",
+    "@noir-lang/noir_js": "^1.0.0-beta.16",
     "framer-motion": "^12.33.0",
     "next": "16.1.6",
     "react": "19.2.3",

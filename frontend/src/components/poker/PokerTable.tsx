@@ -32,6 +32,12 @@ interface PokerTableProps {
   onAction: (action: PlayerAction, amount: bigint) => void;
   onReady: () => void;
   onJoin: (seatIndex: number, buyIn: bigint) => void;
+  /** Decrypted hole cards from client-side crypto */
+  myHoleCards?: [number, number] | null;
+  /** Whether the local player is generating a ZK proof */
+  isProving?: boolean;
+  /** Proof generation progress 0-100 */
+  provingProgress?: number;
 }
 
 export default function PokerTable({
@@ -44,6 +50,9 @@ export default function PokerTable({
   onAction,
   onReady,
   onJoin,
+  myHoleCards,
+  isProving,
+  provingProgress,
 }: PokerTableProps) {
   const localSeat = seats.find(
     (s) => s.isOccupied && s.player === localPlayerAddress
@@ -95,6 +104,73 @@ export default function PokerTable({
             </span>
           </div>
         )}
+
+        {/* Shuffle/Dealing progress overlay */}
+        {hand && (hand.phase === GamePhase.Setup || hand.phase === GamePhase.Shuffling) && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-black/80 rounded-xl p-6 text-center max-w-xs">
+              <h3 className="text-white font-bold text-lg mb-3">
+                {hand.phase === GamePhase.Setup ? "Key Setup" : "Shuffling Deck"}
+              </h3>
+              {hand.phase === GamePhase.Shuffling && (
+                <div className="mb-3">
+                  <div className="text-sm text-gray-400 mb-1">
+                    Player {hand.shuffleProgress + 1} of {hand.numPlayers}
+                  </div>
+                  <div className="bg-gray-700 rounded-full h-2 w-full">
+                    <div
+                      className="bg-blue-500 rounded-full h-2 transition-all duration-300"
+                      style={{ width: `${((hand.shuffleProgress) / hand.numPlayers) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              {hand.phase === GamePhase.Setup && (
+                <div className="text-sm text-gray-400">
+                  Keys: {hand.keysSubmitted} / {hand.numPlayers}
+                </div>
+              )}
+              {isProving && (
+                <div className="mt-3">
+                  <div className="text-sm text-blue-400 mb-1">
+                    Generating ZK proof...
+                  </div>
+                  <div className="bg-gray-700 rounded-full h-2 w-full">
+                    <div
+                      className="bg-blue-400 rounded-full h-2 transition-all duration-300"
+                      style={{ width: `${provingProgress || 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Dealing progress */}
+        {hand && (
+          hand.phase === GamePhase.DealingPreflop ||
+          hand.phase === GamePhase.DealingFlop ||
+          hand.phase === GamePhase.DealingTurn ||
+          hand.phase === GamePhase.DealingRiver
+        ) && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-black/70 rounded-xl px-6 py-4 text-center">
+              <div className="text-white font-bold mb-1">Dealing Cards</div>
+              <div className="text-sm text-gray-400">
+                Submitting reveal tokens...
+              </div>
+              {isProving && (
+                <div className="mt-2 bg-gray-700 rounded-full h-2 w-40">
+                  <div
+                    className="bg-green-400 rounded-full h-2 transition-all"
+                    style={{ width: `${provingProgress || 0}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Player seats */}
@@ -119,6 +195,7 @@ export default function PokerTable({
             isDealer={hand?.dealerSeat === i}
             isLocalPlayer={seat.player === localPlayerAddress}
             position={SEAT_POSITIONS[i]}
+            localHoleCards={seat.player === localPlayerAddress ? myHoleCards : undefined}
           />
         );
       })}
