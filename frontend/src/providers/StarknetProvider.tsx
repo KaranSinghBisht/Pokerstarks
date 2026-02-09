@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useCallback, useRef, type ReactNod
 import type { AccountInterface } from "starknet";
 import Controller from "@cartridge/controller";
 import type { SessionPolicies } from "@cartridge/presets";
-import { TORII_RPC_URL } from "@/lib/dojo-config";
+import { RPC_URL } from "@/lib/dojo-config";
 
 interface StarknetContextType {
   address: string | null;
@@ -52,6 +52,7 @@ const SESSION_POLICIES: SessionPolicies = {
               { entrypoint: "start_hand" },
               { entrypoint: "submit_public_key" },
               { entrypoint: "submit_aggregate_key" },
+              { entrypoint: "submit_initial_deck_hash" },
               { entrypoint: "submit_initial_deck" },
             ],
           },
@@ -114,7 +115,7 @@ let controllerInstance: Controller | null = null;
 function getController(): Controller {
   if (!controllerInstance) {
     controllerInstance = new Controller({
-      rpcUrl: TORII_RPC_URL,
+      rpcUrl: RPC_URL,
       policies: SESSION_POLICIES,
     });
   }

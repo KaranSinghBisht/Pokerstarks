@@ -20,6 +20,15 @@ pub struct Table {
     // Garaga verifier contract addresses (set at table creation)
     pub shuffle_verifier: ContractAddress,
     pub decrypt_verifier: ContractAddress,
+    // Rake (house cut) — basis points (250 = 2.5%), capped per hand
+    pub rake_bps: u16,
+    pub rake_cap: u128,
+    pub rake_recipient: ContractAddress,
+    // Private table support
+    pub is_private: bool,
+    pub invite_code_hash: felt252,
+    // STRK token address for real deposits
+    pub token_address: ContractAddress,
 }
 
 #[derive(Copy, Drop, Serde, Debug)]

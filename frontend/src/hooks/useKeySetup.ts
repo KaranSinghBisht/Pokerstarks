@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { MentalPokerSession } from "@/lib/cards/mental-poker";
 import { computeAggregateKey, type Point } from "@/lib/cards/elgamal";
 import { serializeDeck } from "@/lib/noir/shuffle";
+import { hash } from "starknet";
 import { GamePhase } from "@/lib/constants";
 import type { HandData, PlayerHandData, SeatData } from "@/lib/types";
 
@@ -14,6 +15,7 @@ interface UseKeySetupOptions {
   myAddress: string | null;
   submitPublicKey: (handId: number, pkX: string, pkY: string) => Promise<void>;
   submitAggregateKey: (handId: number, aggPkX: string, aggPkY: string) => Promise<void>;
+  submitInitialDeckHash: (handId: number, deckHash: string) => Promise<void>;
   submitInitialDeck: (handId: number, deck: string[]) => Promise<void>;
 }
 
@@ -31,6 +33,7 @@ export function useKeySetup({
   myAddress,
   submitPublicKey,
   submitAggregateKey,
+  submitInitialDeckHash,
   submitInitialDeck,
 }: UseKeySetupOptions): UseKeySetupReturn {
   const sessionRef = useRef<MentalPokerSession | null>(null);
@@ -114,19 +117,26 @@ export function useKeySetup({
         const aggKey = computeAggregateKey(keys);
         sessionRef.current!.setAggregateKey(keys);
 
-        // Submit aggregate key on-chain
+        // Submit aggregate key on-chain (consensus: all players must submit same key)
         await submitAggregateKey(
           hand.handId,
           aggKey.x.toString(),
           aggKey.y.toString(),
         );
 
-        // Generate and submit initial deck
-        if (deckSubmittedRef.current !== hand.handId) {
+        // Generate initial deck using deterministic seed from contract
+        if (deckSubmittedRef.current !== hand.handId && hand.deckSeed) {
           deckSubmittedRef.current = hand.handId;
-          const seed = BigInt(hand.handId); // Deterministic seed from hand ID
+          const seed = BigInt(hand.deckSeed);
           const deck = sessionRef.current!.generateInitialDeck(seed);
           const serialized = serializeDeck(deck);
+
+          // Submit deck hash for consensus (all players verify independently)
+          // Must match contract's poseidon_hash_span(deck.span())
+          const deckHash = hash.computePoseidonHashOnElements(serialized);
+          await submitInitialDeckHash(hand.handId, deckHash);
+
+          // Submit the full deck (only accepted after hash consensus)
           await submitInitialDeck(hand.handId, serialized);
         }
       } catch (err) {
@@ -137,7 +147,7 @@ export function useKeySetup({
     };
 
     doAggregateAndDeck();
-  }, [hand, playerHands, myAddress, submitAggregateKey, submitInitialDeck]);
+  }, [hand, playerHands, myAddress, submitAggregateKey, submitInitialDeckHash, submitInitialDeck]);
 
   // Reset when hand changes
   useEffect(() => {

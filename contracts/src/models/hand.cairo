@@ -21,6 +21,14 @@ pub struct Hand {
     pub agg_pub_key_x: felt252,
     pub agg_pub_key_y: felt252,
     pub keys_submitted: u8,
+    // Number of players who have submitted matching aggregate key
+    pub agg_key_confirmations: u8,
+    // Deterministic deck seed (Poseidon hash of hand_id + block timestamp)
+    pub deck_seed: felt252,
+    // Number of players who submitted matching initial deck hash
+    pub deck_hash_confirmations: u8,
+    // Hash of the accepted initial deck
+    pub initial_deck_hash: felt252,
 }
 
 #[derive(Copy, Drop, Serde, Debug)]
@@ -44,6 +52,11 @@ pub struct PlayerHand {
     // Revealed card ids (set during showdown, 255 = not revealed)
     pub hole_card_1_id: u8,
     pub hole_card_2_id: u8,
+    // Submitted aggregate key for consensus (Phase 2A)
+    pub submitted_agg_x: felt252,
+    pub submitted_agg_y: felt252,
+    // Submitted initial deck hash for consensus (Phase 2C)
+    pub submitted_deck_hash: felt252,
 }
 
 #[derive(Copy, Drop, Serde, Debug)]

@@ -1,3 +1,15 @@
+// ERC20 interface for STRK token deposits/withdrawals
+#[starknet::interface]
+pub trait IERC20<T> {
+    fn transfer(ref self: T, recipient: starknet::ContractAddress, amount: u256) -> bool;
+    fn transfer_from(
+        ref self: T,
+        sender: starknet::ContractAddress,
+        recipient: starknet::ContractAddress,
+        amount: u256,
+    ) -> bool;
+}
+
 #[starknet::interface]
 pub trait ILobby<T> {
     fn create_table(
@@ -9,8 +21,16 @@ pub trait ILobby<T> {
         max_buy_in: u128,
         shuffle_verifier: starknet::ContractAddress,
         decrypt_verifier: starknet::ContractAddress,
+        rake_bps: u16,
+        rake_cap: u128,
+        rake_recipient: starknet::ContractAddress,
+        is_private: bool,
+        invite_code_hash: felt252,
+        token_address: starknet::ContractAddress,
     ) -> u64;
-    fn join_table(ref self: T, table_id: u64, buy_in: u128, preferred_seat: u8);
+    fn join_table(
+        ref self: T, table_id: u64, buy_in: u128, preferred_seat: u8, invite_code: felt252,
+    );
     fn leave_table(ref self: T, table_id: u64);
     fn set_ready(ref self: T, table_id: u64);
 }
@@ -18,10 +38,14 @@ pub trait ILobby<T> {
 #[dojo::contract]
 pub mod lobby_system {
     use dojo::model::ModelStorage;
-    use starknet::{get_caller_address, get_block_timestamp, ContractAddress};
-    use super::ILobby;
+    use starknet::{get_caller_address, get_block_timestamp, get_contract_address, ContractAddress};
+    use core::poseidon::poseidon_hash_span;
+    use super::{ILobby, IERC20Dispatcher, IERC20DispatcherTrait};
     use crate::models::table::{Table, Seat, TableCounter};
     use crate::models::enums::TableState;
+    use crate::utils::constants::MAX_RAKE_BPS;
+
+    const ZERO_ADDR: felt252 = 0;
 
     #[abi(embed_v0)]
     impl LobbyImpl of ILobby<ContractState> {
@@ -34,6 +58,12 @@ pub mod lobby_system {
             max_buy_in: u128,
             shuffle_verifier: ContractAddress,
             decrypt_verifier: ContractAddress,
+            rake_bps: u16,
+            rake_cap: u128,
+            rake_recipient: ContractAddress,
+            is_private: bool,
+            invite_code_hash: felt252,
+            token_address: ContractAddress,
         ) -> u64 {
             let mut world = self.world_default();
             let caller = get_caller_address();
@@ -44,9 +74,20 @@ pub mod lobby_system {
             assert(small_blind > 0 && small_blind <= big_blind, 'invalid blinds');
             assert(min_buy_in >= big_blind * 10, 'min_buy_in too low');
             assert(max_buy_in >= min_buy_in, 'max < min buy_in');
-            // Verifier addresses must be non-zero
-            assert(shuffle_verifier != 0.try_into().unwrap(), 'invalid shuffle verifier');
-            assert(decrypt_verifier != 0.try_into().unwrap(), 'invalid decrypt verifier');
+            assert(shuffle_verifier != ZERO_ADDR.try_into().unwrap(), 'invalid shuffle verifier');
+            assert(decrypt_verifier != ZERO_ADDR.try_into().unwrap(), 'invalid decrypt verifier');
+            // Validate rake
+            assert(rake_bps <= MAX_RAKE_BPS, 'rake too high');
+            if rake_bps > 0 {
+                assert(rake_cap > 0, 'need cap if rake set');
+                assert(
+                    rake_recipient != ZERO_ADDR.try_into().unwrap(), 'need rake recipient',
+                );
+            }
+            // Private table validation
+            if is_private {
+                assert(invite_code_hash != 0, 'need invite code hash');
+            }
 
             // Get next table ID
             let mut counter: TableCounter = world.read_model(0_u8);
@@ -70,13 +111,25 @@ pub mod lobby_system {
                 created_at: get_block_timestamp(),
                 shuffle_verifier,
                 decrypt_verifier,
+                rake_bps,
+                rake_cap,
+                rake_recipient,
+                is_private,
+                invite_code_hash,
+                token_address,
             };
             world.write_model(@table);
 
             table_id
         }
 
-        fn join_table(ref self: ContractState, table_id: u64, buy_in: u128, preferred_seat: u8) {
+        fn join_table(
+            ref self: ContractState,
+            table_id: u64,
+            buy_in: u128,
+            preferred_seat: u8,
+            invite_code: felt252,
+        ) {
             let mut world = self.world_default();
             let caller = get_caller_address();
 
@@ -84,6 +137,13 @@ pub mod lobby_system {
             assert(table.state == TableState::Waiting, 'table not waiting');
             assert(buy_in >= table.min_buy_in && buy_in <= table.max_buy_in, 'invalid buy_in');
             assert(preferred_seat < table.max_players, 'invalid seat');
+
+            // Private table: verify invite code
+            if table.is_private {
+                let code_input = array![invite_code];
+                let hash = poseidon_hash_span(code_input.span());
+                assert(hash == table.invite_code_hash, 'wrong invite code');
+            }
 
             // Check player is not already seated at this table
             let mut k: u8 = 0;
@@ -98,6 +158,14 @@ pub mod lobby_system {
             // Check seat is empty
             let seat: Seat = world.read_model((table_id, preferred_seat));
             assert(!seat.is_occupied, 'seat taken');
+
+            // Transfer STRK tokens from player to game contract
+            if table.token_address != ZERO_ADDR.try_into().unwrap() {
+                let token = IERC20Dispatcher { contract_address: table.token_address };
+                let success = token
+                    .transfer_from(caller, get_contract_address(), buy_in.into());
+                assert(success, 'token transfer failed');
+            }
 
             // Seat the player
             let new_seat = Seat {
@@ -128,12 +196,19 @@ pub mod lobby_system {
             while i < table.max_players {
                 let seat: Seat = world.read_model((table_id, i));
                 if seat.is_occupied && seat.player == caller {
-                    // NOTE: In production, chips would be transferred back via ERC20/Tongo.
-                    // For hackathon MVP, buy-ins are not backed by token deposits.
+                    // Transfer chips back to player as STRK tokens
+                    if seat.chips > 0
+                        && table.token_address != ZERO_ADDR.try_into().unwrap() {
+                        let token = IERC20Dispatcher {
+                            contract_address: table.token_address,
+                        };
+                        token.transfer(caller, seat.chips.into());
+                    }
+
                     let empty_seat = Seat {
                         table_id,
                         seat_index: i,
-                        player: 0.try_into().unwrap(),
+                        player: ZERO_ADDR.try_into().unwrap(),
                         chips: 0,
                         is_occupied: false,
                         is_ready: false,
@@ -189,8 +264,6 @@ pub mod lobby_system {
             };
 
             if all_ready && ready_count >= 2 {
-                // Mark table as in progress — client then calls
-                // game_setup_system::start_hand(table_id) to begin the hand
                 let mut table: Table = world.read_model(table_id);
                 table.state = TableState::InProgress;
                 world.write_model(@table);

@@ -9,17 +9,24 @@ pub trait IShowdown<T> {
     fn compute_winner(ref self: T, hand_id: u64);
 }
 
+#[starknet::interface]
+pub trait IERC20<T> {
+    fn transfer(ref self: T, recipient: starknet::ContractAddress, amount: u256) -> bool;
+}
+
 #[dojo::contract]
 pub mod showdown_system {
     use dojo::model::ModelStorage;
     use starknet::get_caller_address;
-    use super::IShowdown;
+    use super::{IShowdown, IERC20Dispatcher, IERC20DispatcherTrait};
     use crate::models::hand::{Hand, PlayerHand};
     use crate::models::card::CommunityCards;
     use crate::models::table::{Table, Seat};
     use crate::models::enums::GamePhase;
     use crate::utils::hand_evaluator::evaluate_best_hand;
     use crate::utils::constants::CARD_NOT_DEALT;
+
+    const ZERO_ADDR: felt252 = 0;
 
     #[abi(embed_v0)]
     impl ShowdownImpl of IShowdown<ContractState> {
@@ -207,6 +214,24 @@ pub mod showdown_system {
             };
 
             assert(winner_seat != 255, 'no winner found');
+
+            // Deduct rake before distribution
+            if table.rake_bps > 0 {
+                let rake_amount = hand.pot * table.rake_bps.into() / 10000;
+                let rake = if rake_amount > table.rake_cap {
+                    table.rake_cap
+                } else {
+                    rake_amount
+                };
+                hand.pot -= rake;
+
+                // Transfer rake to house wallet via ERC20 (if token is set)
+                if table.token_address != ZERO_ADDR.try_into().unwrap()
+                    && table.rake_recipient != ZERO_ADDR.try_into().unwrap() {
+                    let token = IERC20Dispatcher { contract_address: table.token_address };
+                    token.transfer(table.rake_recipient, rake.into());
+                }
+            }
 
             // Split pot: find ALL players with the same best hand
             let mut winner_count: u128 = 0;

@@ -23,6 +23,12 @@ const MOCK_TABLES: TableData[] = [
     currentHandId: 0,
     dealerSeat: 0,
     playerCount: 2,
+    rakeBps: 0,
+    rakeCap: 0n,
+    rakeRecipient: "0x0",
+    isPrivate: false,
+    inviteCodeHash: "0",
+    tokenAddress: "0x0",
   },
   {
     tableId: 1,
@@ -36,6 +42,12 @@ const MOCK_TABLES: TableData[] = [
     currentHandId: 1,
     dealerSeat: 2,
     playerCount: 4,
+    rakeBps: 250,
+    rakeCap: 50n,
+    rakeRecipient: "0x0",
+    isPrivate: false,
+    inviteCodeHash: "0",
+    tokenAddress: "0x0",
   },
 ];
 
@@ -54,6 +66,12 @@ function parseTable(models: Record<string, unknown>): TableData | null {
     currentHandId: Number(t.current_hand_id),
     dealerSeat: Number(t.dealer_seat),
     playerCount: Number(t.player_count),
+    rakeBps: Number(t.rake_bps ?? 0),
+    rakeCap: BigInt(String(t.rake_cap ?? "0")),
+    rakeRecipient: String(t.rake_recipient ?? "0x0"),
+    isPrivate: Boolean(t.is_private),
+    inviteCodeHash: String(t.invite_code_hash ?? "0"),
+    tokenAddress: String(t.token_address ?? "0x0"),
   };
 }
 
@@ -173,6 +191,12 @@ export function useLobby(): UseLobbyReturn {
         bigBlind: bigint;
         minBuyIn: bigint;
         maxBuyIn: bigint;
+        rakeBps?: number;
+        rakeCap?: bigint;
+        rakeRecipient?: string;
+        isPrivate?: boolean;
+        inviteCodeHash?: string;
+        tokenAddress?: string;
       },
       account?: AccountInterface | null,
     ) => {
@@ -181,6 +205,8 @@ export function useLobby(): UseLobbyReturn {
         console.log("Create table (mock):", params);
         return;
       }
+      const shuffleVerifier = process.env.NEXT_PUBLIC_SHUFFLE_VERIFIER_ADDRESS || "0x0";
+      const decryptVerifier = process.env.NEXT_PUBLIC_DECRYPT_VERIFIER_ADDRESS || "0x0";
       await account.execute({
         contractAddress,
         entrypoint: "create_table",
@@ -190,6 +216,14 @@ export function useLobby(): UseLobbyReturn {
           String(params.bigBlind),
           String(params.minBuyIn),
           String(params.maxBuyIn),
+          shuffleVerifier,
+          decryptVerifier,
+          String(params.rakeBps ?? 0),
+          String(params.rakeCap ?? 0),
+          params.rakeRecipient ?? "0x0",
+          params.isPrivate ? "1" : "0",
+          params.inviteCodeHash ?? "0",
+          params.tokenAddress ?? "0x0",
         ]),
       });
     },

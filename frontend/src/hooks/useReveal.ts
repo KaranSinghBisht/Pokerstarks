@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MentalPokerSession } from "@/lib/cards/mental-poker";
+import { proofToGaragaCalldata } from "@/lib/garaga/calldata";
 import { GamePhase } from "@/lib/constants";
 import type { HandData, PlayerHandData, SeatData, CommunityCardsData, RevealTokenData } from "@/lib/types";
 
@@ -54,6 +55,7 @@ export function useReveal({
   const [revealProgress, setRevealProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
+  const workerReadyRef = useRef(false);
   const revealedPhasesRef = useRef<Set<string>>(new Set());
 
   const mySeat = seats.find(
@@ -72,6 +74,15 @@ export function useReveal({
         new URL("../lib/noir/worker.ts", import.meta.url),
         { type: "module" },
       );
+
+      workerRef.current.onmessage = (e) => {
+        if (e.data.type === "ready") {
+          workerReadyRef.current = true;
+        }
+      };
+
+      // Send init message — worker requires this before any prove message
+      workerRef.current.postMessage({ type: "init", circuit: "decrypt" });
     } catch (err) {
       console.warn("Failed to create decrypt worker:", err);
     }
@@ -79,6 +90,7 @@ export function useReveal({
     return () => {
       workerRef.current?.terminate();
       workerRef.current = null;
+      workerReadyRef.current = false;
     };
   }, []);
 
@@ -197,29 +209,38 @@ export function useReveal({
 
   const generateDecryptProof = useCallback(
     async (inputs: Record<string, string>): Promise<string[]> => {
-      return new Promise((resolve, reject) => {
-        if (!workerRef.current) {
-          reject(new Error("Worker not initialized"));
-          return;
-        }
-
-        const handler = (e: MessageEvent) => {
-          if (e.data.type === "proof_ready") {
-            workerRef.current?.removeEventListener("message", handler);
-            resolve(e.data.calldata as string[]);
-          } else if (e.data.type === "error") {
-            workerRef.current?.removeEventListener("message", handler);
-            reject(new Error(e.data.error));
+      // Step 1: Generate raw proof in Web Worker
+      const rawProof = await new Promise<{ proof: Uint8Array; publicInputs: string[] }>(
+        (resolve, reject) => {
+          if (!workerRef.current || !workerReadyRef.current) {
+            reject(new Error("Worker not initialized. Wait for init to complete."));
+            return;
           }
-        };
 
-        workerRef.current.addEventListener("message", handler);
-        workerRef.current.postMessage({
-          type: "prove",
-          circuitType: "decrypt",
-          inputs,
-        });
-      });
+          const handler = (e: MessageEvent) => {
+            if (e.data.type === "proof_ready") {
+              workerRef.current?.removeEventListener("message", handler);
+              resolve({
+                proof: e.data.proof as Uint8Array,
+                publicInputs: e.data.publicInputs as string[],
+              });
+            } else if (e.data.type === "error") {
+              workerRef.current?.removeEventListener("message", handler);
+              reject(new Error(e.data.message));
+            }
+          };
+
+          workerRef.current.addEventListener("message", handler);
+          workerRef.current.postMessage({
+            type: "prove",
+            inputs,
+          });
+        },
+      );
+
+      // Step 2: Convert raw proof to Garaga calldata (MSM/KZG hints)
+      const { calldata } = await proofToGaragaCalldata(rawProof, "decrypt");
+      return calldata;
     },
     [],
   );

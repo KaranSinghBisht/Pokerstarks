@@ -60,11 +60,12 @@ export function usePokerActions(
   }, [tableId, account]);
 
   const joinTable = useCallback(
-    async (seatIndex: number, buyIn: bigint) => {
+    async (seatIndex: number, buyIn: bigint, inviteCode: string = "0") => {
       await executeCall(account ?? null, CONTRACTS.lobby, "join_table", [
         tableId,
         buyIn,
         seatIndex,
+        inviteCode,
       ]);
     },
     [tableId, account],
@@ -95,6 +96,18 @@ export function usePokerActions(
         CONTRACTS.game_setup,
         "submit_aggregate_key",
         [handId, aggPkX, aggPkY],
+      );
+    },
+    [account],
+  );
+
+  const submitInitialDeckHash = useCallback(
+    async (handId: number, deckHash: string) => {
+      await executeCall(
+        account ?? null,
+        CONTRACTS.game_setup,
+        "submit_initial_deck_hash",
+        [handId, deckHash],
       );
     },
     [account],
@@ -239,6 +252,7 @@ export function usePokerActions(
     leaveTable,
     submitPublicKey,
     submitAggregateKey,
+    submitInitialDeckHash,
     submitInitialDeck,
     submitShuffle,
     submitRevealToken,

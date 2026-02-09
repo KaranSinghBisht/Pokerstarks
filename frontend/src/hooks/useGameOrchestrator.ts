@@ -41,6 +41,7 @@ export function useGameOrchestrator(tableId: number) {
     myAddress: address,
     submitPublicKey: actions.submitPublicKey,
     submitAggregateKey: actions.submitAggregateKey,
+    submitInitialDeckHash: actions.submitInitialDeckHash,
     submitInitialDeck: actions.submitInitialDeck,
   });
 

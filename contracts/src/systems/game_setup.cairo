@@ -11,6 +11,7 @@ pub trait IGameSetup<T> {
     fn start_hand(ref self: T, table_id: u64);
     fn submit_public_key(ref self: T, hand_id: u64, pk_x: felt252, pk_y: felt252);
     fn submit_aggregate_key(ref self: T, hand_id: u64, agg_pk_x: felt252, agg_pk_y: felt252);
+    fn submit_initial_deck_hash(ref self: T, hand_id: u64, deck_hash: felt252);
     fn submit_initial_deck(ref self: T, hand_id: u64, deck: Array<felt252>);
 }
 
@@ -18,6 +19,7 @@ pub trait IGameSetup<T> {
 pub mod game_setup_system {
     use dojo::model::ModelStorage;
     use starknet::{get_caller_address, get_block_timestamp};
+    use core::poseidon::poseidon_hash_span;
     use super::IGameSetup;
     use crate::models::hand::{Hand, PlayerHand, HandCounter};
     use crate::models::table::{Table, Seat};
@@ -39,14 +41,11 @@ pub mod game_setup_system {
             // Guard against duplicate start_hand calls (race condition)
             if table.current_hand_id > 0 {
                 let existing_hand: Hand = world.read_model(table.current_hand_id);
-                // Only allow starting a new hand if no hand is actively in progress
                 assert(
                     existing_hand.phase == GamePhase::Settling
                         || existing_hand.phase == GamePhase::Setup,
                     'hand already active',
                 );
-                // If the existing hand is in Setup (from a previous start_hand),
-                // prevent creating a duplicate
                 if existing_hand.phase == GamePhase::Setup {
                     assert(
                         existing_hand.keys_submitted == existing_hand.num_players,
@@ -82,8 +81,12 @@ pub mod game_setup_system {
                 ref world, table_id, sb_seat, table.max_players,
             );
 
-            // Create the hand
+            // Generate deterministic deck seed from hand_id + block timestamp
             let now = get_block_timestamp();
+            let seed_input = array![hand_id.into(), now.into()];
+            let deck_seed = poseidon_hash_span(seed_input.span());
+
+            // Create the hand
             let hand = Hand {
                 hand_id,
                 table_id,
@@ -92,7 +95,7 @@ pub mod game_setup_system {
                 current_bet: 0,
                 active_players: num_players,
                 num_players,
-                current_turn_seat: 0, // set after dealing
+                current_turn_seat: 0,
                 dealer_seat,
                 shuffle_progress: 0,
                 started_at: now,
@@ -100,6 +103,10 @@ pub mod game_setup_system {
                 agg_pub_key_x: 0,
                 agg_pub_key_y: 0,
                 keys_submitted: 0,
+                agg_key_confirmations: 0,
+                deck_seed,
+                deck_hash_confirmations: 0,
+                initial_deck_hash: 0,
             };
             world.write_model(@hand);
 
@@ -124,6 +131,9 @@ pub mod game_setup_system {
                         hole_card_2_pos: card_pos + 1,
                         hole_card_1_id: CARD_NOT_DEALT,
                         hole_card_2_id: CARD_NOT_DEALT,
+                        submitted_agg_x: 0,
+                        submitted_agg_y: 0,
+                        submitted_deck_hash: 0,
                     };
                     world.write_model(@ph);
                     card_pos += 2;
@@ -237,8 +247,7 @@ pub mod game_setup_system {
         }
 
         /// Submit the aggregate public key (sum of all player public keys).
-        /// Computed off-chain by any player; all clients verify independently.
-        /// Must be called after all keys submitted and before first shuffle.
+        /// ALL players must submit the same aggregate key for consensus.
         fn submit_aggregate_key(
             ref self: ContractState,
             hand_id: u64,
@@ -246,24 +255,137 @@ pub mod game_setup_system {
             agg_pk_y: felt252,
         ) {
             let mut world = self.world_default();
+            let caller = get_caller_address();
 
             let mut hand: Hand = world.read_model(hand_id);
             assert(hand.phase == GamePhase::Shuffling, 'not shuffling phase');
-            assert(hand.agg_pub_key_x == 0 && hand.agg_pub_key_y == 0, 'agg key already set');
             assert(agg_pk_x != 0 || agg_pk_y != 0, 'invalid agg key');
 
-            hand.agg_pub_key_x = agg_pk_x;
-            hand.agg_pub_key_y = agg_pk_y;
+            // Find caller's seat
+            let table: Table = world.read_model(hand.table_id);
+            let mut seat_idx: u8 = 255;
+            let mut i: u8 = 0;
+            while i < table.max_players {
+                let seat: Seat = world.read_model((hand.table_id, i));
+                if seat.is_occupied && seat.player == caller {
+                    seat_idx = i;
+                    break;
+                }
+                i += 1;
+            };
+            assert(seat_idx != 255, 'player not at table');
+
+            // Store this player's submitted aggregate key
+            let mut ph: PlayerHand = world.read_model((hand_id, seat_idx));
+            assert(ph.submitted_agg_x == 0, 'agg key already submitted');
+            ph.submitted_agg_x = agg_pk_x;
+            ph.submitted_agg_y = agg_pk_y;
+            world.write_model(@ph);
+
+            // Check if all players submitted the same key
+            let mut all_agree = true;
+            let mut count: u8 = 0;
+            let mut j: u8 = 0;
+            while j < table.max_players {
+                let check_ph: PlayerHand = world.read_model((hand_id, j));
+                if check_ph.player != 0.try_into().unwrap() {
+                    if check_ph.submitted_agg_x == 0 && check_ph.submitted_agg_y == 0 {
+                        all_agree = false;
+                        break;
+                    }
+                    if check_ph.submitted_agg_x != agg_pk_x
+                        || check_ph.submitted_agg_y != agg_pk_y {
+                        all_agree = false;
+                        break;
+                    }
+                    count += 1;
+                }
+                j += 1;
+            };
+
+            hand.agg_key_confirmations = count;
+
+            if all_agree && count == hand.num_players {
+                hand.agg_pub_key_x = agg_pk_x;
+                hand.agg_pub_key_y = agg_pk_y;
+            }
+            world.write_model(@hand);
+        }
+
+        /// Submit the hash of the initial deck for consensus.
+        /// All players compute the initial deck deterministically from deck_seed
+        /// and submit its Poseidon hash. Only when all agree is the full deck accepted.
+        fn submit_initial_deck_hash(
+            ref self: ContractState, hand_id: u64, deck_hash: felt252,
+        ) {
+            let mut world = self.world_default();
+            let caller = get_caller_address();
+
+            let mut hand: Hand = world.read_model(hand_id);
+            assert(hand.phase == GamePhase::Shuffling, 'not shuffling phase');
+            assert(hand.agg_pub_key_x != 0, 'agg key not finalized');
+            assert(deck_hash != 0, 'invalid deck hash');
+
+            // Find caller's seat
+            let table: Table = world.read_model(hand.table_id);
+            let mut seat_idx: u8 = 255;
+            let mut i: u8 = 0;
+            while i < table.max_players {
+                let seat: Seat = world.read_model((hand.table_id, i));
+                if seat.is_occupied && seat.player == caller {
+                    seat_idx = i;
+                    break;
+                }
+                i += 1;
+            };
+            assert(seat_idx != 255, 'player not at table');
+
+            let mut ph: PlayerHand = world.read_model((hand_id, seat_idx));
+            assert(ph.submitted_deck_hash == 0, 'deck hash already submitted');
+            ph.submitted_deck_hash = deck_hash;
+            world.write_model(@ph);
+
+            // Check consensus
+            let mut all_agree = true;
+            let mut count: u8 = 0;
+            let mut j: u8 = 0;
+            while j < table.max_players {
+                let check_ph: PlayerHand = world.read_model((hand_id, j));
+                if check_ph.player != 0.try_into().unwrap() {
+                    if check_ph.submitted_deck_hash == 0 {
+                        all_agree = false;
+                        break;
+                    }
+                    if check_ph.submitted_deck_hash != deck_hash {
+                        all_agree = false;
+                        break;
+                    }
+                    count += 1;
+                }
+                j += 1;
+            };
+
+            hand.deck_hash_confirmations = count;
+            if all_agree && count == hand.num_players {
+                hand.initial_deck_hash = deck_hash;
+            }
             world.write_model(@hand);
         }
 
         /// Called to submit the initial encrypted deck before shuffling begins.
+        /// Requires: aggregate key finalized + deck hash consensus reached.
         fn submit_initial_deck(ref self: ContractState, hand_id: u64, deck: Array<felt252>) {
             let mut world = self.world_default();
 
             let hand: Hand = world.read_model(hand_id);
             assert(hand.phase == GamePhase::Shuffling, 'not shuffling phase');
+            assert(hand.agg_pub_key_x != 0, 'agg key not finalized');
+            assert(hand.initial_deck_hash != 0, 'deck hash not agreed');
             assert(deck.len() == 208, 'invalid deck size');
+
+            // Verify the submitted deck matches the agreed hash
+            let actual_hash = poseidon_hash_span(deck.span());
+            assert(actual_hash == hand.initial_deck_hash, 'deck does not match hash');
 
             // Check no deck version 0 exists yet
             let existing: EncryptedDeck = world.read_model((hand_id, 0_u8));

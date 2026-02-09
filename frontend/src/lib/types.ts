@@ -10,6 +10,15 @@ export interface TableData {
   currentHandId: number;
   dealerSeat: number;
   playerCount: number;
+  // Rake
+  rakeBps: number;
+  rakeCap: bigint;
+  rakeRecipient: string;
+  // Private table
+  isPrivate: boolean;
+  inviteCodeHash: string;
+  // Token
+  tokenAddress: string;
 }
 
 export interface SeatData {
@@ -37,6 +46,10 @@ export interface PlayerHandData {
   holeCard2Pos: number;
   holeCard1Id: number;
   holeCard2Id: number;
+  // Consensus fields
+  submittedAggX: string;
+  submittedAggY: string;
+  submittedDeckHash: string;
 }
 
 export interface CommunityCardsData {
@@ -83,4 +96,16 @@ export interface HandData {
   aggPubKeyX: string;
   aggPubKeyY: string;
   keysSubmitted: number;
+  // Security consensus fields
+  aggKeyConfirmations: number;
+  deckSeed: string;
+  deckHashConfirmations: number;
+  initialDeckHash: string;
+}
+
+export interface SidePotData {
+  handId: number;
+  potIndex: number;
+  amount: bigint;
+  eligibleMask: number;
 }

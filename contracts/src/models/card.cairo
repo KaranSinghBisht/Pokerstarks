@@ -33,3 +33,17 @@ pub struct CommunityCards {
     pub turn_pos: u8,
     pub river_pos: u8,
 }
+
+// Side pots for all-in scenarios
+// pot_index 0 = main pot, 1+ = side pots (in order of creation)
+#[derive(Copy, Drop, Serde, Debug)]
+#[dojo::model]
+pub struct SidePot {
+    #[key]
+    pub hand_id: u64,
+    #[key]
+    pub pot_index: u8,
+    pub amount: u128,
+    // Bitmask of seats eligible to win this pot (bit N = seat N)
+    pub eligible_mask: u8,
+}

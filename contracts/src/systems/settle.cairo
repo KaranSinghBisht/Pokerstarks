@@ -1,4 +1,9 @@
 #[starknet::interface]
+pub trait IERC20<T> {
+    fn transfer(ref self: T, recipient: starknet::ContractAddress, amount: u256) -> bool;
+}
+
+#[starknet::interface]
 pub trait ISettle<T> {
     fn distribute_pot(ref self: T, hand_id: u64);
 }
@@ -6,11 +11,13 @@ pub trait ISettle<T> {
 #[dojo::contract]
 pub mod settle_system {
     use dojo::model::ModelStorage;
-    use super::ISettle;
+    use super::{ISettle, IERC20Dispatcher, IERC20DispatcherTrait};
     use crate::models::hand::Hand;
     use crate::models::hand::PlayerHand;
     use crate::models::table::{Table, Seat};
     use crate::models::enums::GamePhase;
+
+    const ZERO_ADDR: felt252 = 0;
 
     #[abi(embed_v0)]
     impl SettleImpl of ISettle<ContractState> {
@@ -26,10 +33,29 @@ pub mod settle_system {
             // - Fold-win: pot > 0, find the last standing player
             // - Showdown: compute_winner already awarded pot and set it to 0
             if hand.pot > 0 {
+                // Deduct rake on fold-wins too
+                if table.rake_bps > 0 {
+                    let rake_amount = hand.pot * table.rake_bps.into() / 10000;
+                    let rake = if rake_amount > table.rake_cap {
+                        table.rake_cap
+                    } else {
+                        rake_amount
+                    };
+                    hand.pot -= rake;
+
+                    if table.token_address != ZERO_ADDR.try_into().unwrap()
+                        && table.rake_recipient != ZERO_ADDR.try_into().unwrap() {
+                        let token = IERC20Dispatcher {
+                            contract_address: table.token_address,
+                        };
+                        token.transfer(table.rake_recipient, rake.into());
+                    }
+                }
+
                 let mut i: u8 = 0;
                 while i < table.max_players {
                     let ph: PlayerHand = world.read_model((hand_id, i));
-                    if ph.player != 0.try_into().unwrap() && !ph.has_folded {
+                    if ph.player != ZERO_ADDR.try_into().unwrap() && !ph.has_folded {
                         let mut winner_seat: Seat = world.read_model((hand.table_id, i));
                         winner_seat.chips += hand.pot;
                         world.write_model(@winner_seat);

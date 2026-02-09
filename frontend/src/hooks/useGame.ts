@@ -31,6 +31,12 @@ function parseTable(models: Record<string, unknown>): TableData | null {
     currentHandId: Number(t.current_hand_id),
     dealerSeat: Number(t.dealer_seat),
     playerCount: Number(t.player_count),
+    rakeBps: Number(t.rake_bps ?? 0),
+    rakeCap: BigInt(String(t.rake_cap ?? "0")),
+    rakeRecipient: String(t.rake_recipient ?? "0x0"),
+    isPrivate: Boolean(t.is_private),
+    inviteCodeHash: String(t.invite_code_hash ?? "0"),
+    tokenAddress: String(t.token_address ?? "0x0"),
   };
 }
 
@@ -66,6 +72,10 @@ function parseHand(models: Record<string, unknown>): HandData | null {
     aggPubKeyX: String(h.agg_pub_key_x ?? "0"),
     aggPubKeyY: String(h.agg_pub_key_y ?? "0"),
     keysSubmitted: Number(h.keys_submitted),
+    aggKeyConfirmations: Number(h.agg_key_confirmations ?? 0),
+    deckSeed: String(h.deck_seed ?? "0"),
+    deckHashConfirmations: Number(h.deck_hash_confirmations ?? 0),
+    initialDeckHash: String(h.initial_deck_hash ?? "0"),
   };
 }
 
@@ -87,6 +97,9 @@ function parsePlayerHand(models: Record<string, unknown>): PlayerHandData | null
     holeCard2Pos: Number(ph.hole_card_2_pos ?? 0),
     holeCard1Id: Number(ph.hole_card_1_id ?? 255),
     holeCard2Id: Number(ph.hole_card_2_id ?? 255),
+    submittedAggX: String(ph.submitted_agg_x ?? "0"),
+    submittedAggY: String(ph.submitted_agg_y ?? "0"),
+    submittedDeckHash: String(ph.submitted_deck_hash ?? "0"),
   };
 }
 
@@ -146,6 +159,12 @@ function makeMockTable(tableId: number): TableData {
     currentHandId: 0,
     dealerSeat: 0,
     playerCount: 2,
+    rakeBps: 0,
+    rakeCap: 0n,
+    rakeRecipient: "0x0",
+    isPrivate: false,
+    inviteCodeHash: "0",
+    tokenAddress: "0x0",
   };
 }
 
