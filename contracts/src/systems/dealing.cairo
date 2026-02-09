@@ -26,6 +26,7 @@ pub mod dealing_system {
     use crate::systems::game_setup::{IVerifierDispatcher, IVerifierDispatcherTrait};
     use crate::models::hand::{Hand, PlayerHand};
     use crate::models::card::{RevealToken, CommunityCards};
+    use crate::models::deck::EncryptedDeck;
     use crate::models::table::{Table, Seat};
     use crate::models::enums::GamePhase;
     use crate::utils::constants::BETTING_TIMEOUT;
@@ -84,26 +85,39 @@ pub mod dealing_system {
             // Validate key public inputs from the proof
             // Layout: [generator_x, generator_y, pub_key_x, pub_key_y, c1_x, c1_y, token_x, token_y]
             let public_inputs = result.unwrap();
-            if public_inputs.len() >= 8 {
-                // Verify public key matches submitter's stored key
-                assert(
-                    *public_inputs.at(2) == caller_ph.public_key_x.into(),
-                    'proof: wrong pub key x',
-                );
-                assert(
-                    *public_inputs.at(3) == caller_ph.public_key_y.into(),
-                    'proof: wrong pub key y',
-                );
-                // Verify token matches what was submitted
-                assert(
-                    *public_inputs.at(6) == token_x.into(),
-                    'proof: wrong token x',
-                );
-                assert(
-                    *public_inputs.at(7) == token_y.into(),
-                    'proof: wrong token y',
-                );
-            }
+            assert(public_inputs.len() >= 8, 'insufficient proof inputs');
+
+            // Verify public key matches submitter's stored key
+            assert(
+                *public_inputs.at(2) == caller_ph.public_key_x.into(),
+                'proof: wrong pub key x',
+            );
+            assert(
+                *public_inputs.at(3) == caller_ph.public_key_y.into(),
+                'proof: wrong pub key y',
+            );
+            // Verify token matches what was submitted
+            assert(
+                *public_inputs.at(6) == token_x.into(),
+                'proof: wrong token x',
+            );
+            assert(
+                *public_inputs.at(7) == token_y.into(),
+                'proof: wrong token y',
+            );
+
+            // F-02 FIX: Bind proof C1 to the on-chain encrypted deck at card_position.
+            // Read the final shuffled deck (version = num_players, after all shuffles)
+            let deck: EncryptedDeck = world.read_model((hand_id, hand.num_players));
+            assert(deck.cards.len() == 208, 'deck not found');
+
+            // Each card = 4 felt252s: [c1_x, c1_y, c2_x, c2_y]
+            let pos: u32 = card_position.into();
+            let deck_c1_x: felt252 = *deck.cards.at(pos * 4);
+            let deck_c1_y: felt252 = *deck.cards.at(pos * 4 + 1);
+
+            assert(*public_inputs.at(4) == deck_c1_x.into(), 'proof c1_x mismatch');
+            assert(*public_inputs.at(5) == deck_c1_y.into(), 'proof c1_y mismatch');
 
             // Store the reveal token
             let token = RevealToken {

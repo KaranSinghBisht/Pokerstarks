@@ -48,7 +48,8 @@ pub mod settle_system {
                         let token = IERC20Dispatcher {
                             contract_address: table.token_address,
                         };
-                        token.transfer(table.rake_recipient, rake.into());
+                        let success = token.transfer(table.rake_recipient, rake.into());
+                        assert(success, 'rake transfer failed');
                     }
                 }
 

@@ -12,6 +12,7 @@ pub trait IShuffle<T> {
 pub mod shuffle_system {
     use dojo::model::ModelStorage;
     use starknet::{get_caller_address, get_block_timestamp};
+    use core::poseidon::poseidon_hash_span;
     use super::IShuffle;
     use crate::systems::game_setup::{IVerifierDispatcher, IVerifierDispatcherTrait};
     use crate::models::hand::Hand;
@@ -56,21 +57,40 @@ pub mod shuffle_system {
             let result = verifier.verify_ultra_keccak_zk_honk_proof(proof.span());
             assert(result.is_ok(), 'invalid shuffle proof');
 
-            // Validate key public inputs from the proof
-            // The verifier returns public inputs as Span<u256>
-            // Layout: [generator_x, generator_y, pub_key_x, pub_key_y, ...]
+            // Validate public inputs from the proof
+            // Layout: [gen_x, gen_y, pk_x, pk_y, input_c1_x[52], input_c1_y[52],
+            //          input_c2_x[52], input_c2_y[52], output_c1_x[52], output_c1_y[52],
+            //          output_c2_x[52], output_c2_y[52]]  = 420 total
             let public_inputs = result.unwrap();
-            if public_inputs.len() >= 4 {
-                // Verify aggregate public key matches on-chain state
-                assert(
-                    *public_inputs.at(2) == hand.agg_pub_key_x.into(),
-                    'proof: wrong agg key x',
-                );
-                assert(
-                    *public_inputs.at(3) == hand.agg_pub_key_y.into(),
-                    'proof: wrong agg key y',
-                );
-            }
+            assert(public_inputs.len() >= 420, 'insufficient proof inputs');
+
+            // Verify aggregate public key matches on-chain state
+            assert(
+                *public_inputs.at(2) == hand.agg_pub_key_x.into(),
+                'proof: wrong agg key x',
+            );
+            assert(
+                *public_inputs.at(3) == hand.agg_pub_key_y.into(),
+                'proof: wrong agg key y',
+            );
+
+            // F-01 FIX: Bind proof's input deck to on-chain stored deck.
+            // Read the previous deck version (before this shuffle).
+            let prev_deck: EncryptedDeck = world.read_model((hand_id, hand.shuffle_progress));
+            assert(prev_deck.cards.len() == 208, 'previous deck missing');
+
+            // Reorder proof input deck (array-of-fields layout) to interleaved,
+            // then Poseidon-hash and compare against stored deck hash.
+            let proof_input_deck = reorder_proof_deck_to_interleaved(public_inputs, 4);
+            let stored_hash = poseidon_hash_span(prev_deck.cards.span());
+            let proof_in_hash = poseidon_hash_span(proof_input_deck.span());
+            assert(stored_hash == proof_in_hash, 'input deck mismatch');
+
+            // F-01 FIX: Bind proof's output deck to submitted new_deck.
+            let proof_output_deck = reorder_proof_deck_to_interleaved(public_inputs, 212);
+            let new_deck_hash = poseidon_hash_span(new_deck.span());
+            let proof_out_hash = poseidon_hash_span(proof_output_deck.span());
+            assert(new_deck_hash == proof_out_hash, 'output deck mismatch');
 
             // Store the new deck
             let deck = EncryptedDeck {
@@ -113,6 +133,24 @@ pub mod shuffle_system {
             i += 1;
         };
         255
+    }
+
+    /// Reorder proof public inputs from array-of-fields layout to interleaved layout.
+    /// Proof layout at `offset`: c1_x[52], c1_y[52], c2_x[52], c2_y[52].
+    /// Output: [c1_x_0, c1_y_0, c2_x_0, c2_y_0, c1_x_1, ...] (208 felt252s).
+    fn reorder_proof_deck_to_interleaved(
+        public_inputs: Span<u256>, offset: u32,
+    ) -> Array<felt252> {
+        let mut deck: Array<felt252> = array![];
+        let mut i: u32 = 0;
+        while i < 52 {
+            deck.append((*public_inputs.at(offset + i)).try_into().unwrap());
+            deck.append((*public_inputs.at(offset + 52 + i)).try_into().unwrap());
+            deck.append((*public_inputs.at(offset + 104 + i)).try_into().unwrap());
+            deck.append((*public_inputs.at(offset + 156 + i)).try_into().unwrap());
+            i += 1;
+        };
+        deck
     }
 
     #[generate_trait]

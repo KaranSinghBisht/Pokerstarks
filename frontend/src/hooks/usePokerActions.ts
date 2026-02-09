@@ -187,29 +187,13 @@ export function usePokerActions(
     [account],
   );
 
-  const revealHand = useCallback(
-    async (handId: number, card1Id: number, card2Id: number) => {
+  const submitCardDecryption = useCallback(
+    async (handId: number, cardPosition: number, cardId: number) => {
       await executeCall(
         account ?? null,
         CONTRACTS.showdown,
-        "reveal_hand",
-        [handId, card1Id, card2Id],
-      );
-    },
-    [account],
-  );
-
-  const setCommunityCards = useCallback(
-    async (
-      handId: number,
-      flop1: number, flop2: number, flop3: number,
-      turnCard: number, riverCard: number,
-    ) => {
-      await executeCall(
-        account ?? null,
-        CONTRACTS.showdown,
-        "set_community_cards",
-        [handId, flop1, flop2, flop3, turnCard, riverCard],
+        "submit_card_decryption",
+        [handId, cardPosition, cardId],
       );
     },
     [account],
@@ -257,8 +241,7 @@ export function usePokerActions(
     submitShuffle,
     submitRevealToken,
     submitRevealTokensBatch,
-    revealHand,
-    setCommunityCards,
+    submitCardDecryption,
     computeWinner,
     distributePot,
     startHand,

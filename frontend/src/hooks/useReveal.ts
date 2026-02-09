@@ -20,6 +20,11 @@ interface UseRevealOptions {
     tokenY: string,
     proof: string[],
   ) => Promise<void>;
+  submitCardDecryption: (
+    handId: number,
+    cardPosition: number,
+    cardId: number,
+  ) => Promise<void>;
   // Raw data from Torii
   currentDeckData: string[] | null;
   revealTokens: RevealTokenData[];
@@ -47,6 +52,7 @@ export function useReveal({
   myAddress,
   session,
   submitRevealToken,
+  submitCardDecryption,
   currentDeckData,
   revealTokens,
 }: UseRevealOptions): UseRevealReturn {
@@ -199,11 +205,84 @@ export function useReveal({
     }
   }, [session, myPlayerHand, currentDeckData, revealTokens, mySeat, playerHands, myHoleCards]);
 
+  // Auto-submit card decryption votes during Showdown phase
+  // Each player decrypts all visible cards and submits the card_id for consensus
+  const submittedDecryptionsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!hand || !session || !mySeat || !currentDeckData) return;
+    if (hand.phase !== GamePhase.Showdown) return;
+
+    const doSubmitDecryptions = async () => {
+      try {
+        session.loadDeck(currentDeckData);
+
+        // Collect all card positions that need consensus (community + non-folded hole cards)
+        const positions: number[] = [];
+
+        // Community card positions
+        if (communityCards) {
+          if (communityCards.flop1Pos) positions.push(communityCards.flop1Pos);
+          if (communityCards.flop2Pos) positions.push(communityCards.flop2Pos);
+          if (communityCards.flop3Pos) positions.push(communityCards.flop3Pos);
+          if (communityCards.turnPos) positions.push(communityCards.turnPos);
+          if (communityCards.riverPos) positions.push(communityCards.riverPos);
+        }
+
+        // All non-folded players' hole card positions
+        for (const ph of playerHands) {
+          if (ph.hasFolded || ph.player === "") continue;
+          if (ph.holeCard1Pos) positions.push(ph.holeCard1Pos);
+          if (ph.holeCard2Pos) positions.push(ph.holeCard2Pos);
+        }
+
+        const activePlayers = playerHands.filter((ph) => !ph.hasFolded && ph.player !== "").length;
+
+        for (const pos of positions) {
+          const key = `${hand.handId}-${pos}`;
+          if (submittedDecryptionsRef.current.has(key)) continue;
+
+          // Check if we have enough reveal tokens for this position
+          const tokensForPos = revealTokens.filter(
+            (t) => t.handId === hand.handId && t.cardPosition === pos && t.proofVerified,
+          );
+
+          // Community cards need all players' tokens; hole cards need (all - 1)
+          const isCommunity =
+            communityCards &&
+            (pos === communityCards.flop1Pos ||
+              pos === communityCards.flop2Pos ||
+              pos === communityCards.flop3Pos ||
+              pos === communityCards.turnPos ||
+              pos === communityCards.riverPos);
+          const required = isCommunity ? activePlayers : activePlayers - 1;
+
+          if (tokensForPos.length < required) continue;
+
+          // Decrypt the card
+          const tokens = tokensForPos.map((t) => ({
+            x: BigInt(t.tokenX),
+            y: BigInt(t.tokenY),
+          }));
+          const cardId = session.decryptCard(pos, tokens);
+          if (cardId < 0) continue;
+
+          submittedDecryptionsRef.current.add(key);
+          await submitCardDecryption(hand.handId, pos, cardId);
+        }
+      } catch (err) {
+        console.error("Card decryption vote submission failed:", err);
+      }
+    };
+
+    doSubmitDecryptions();
+  }, [hand, session, mySeat, currentDeckData, playerHands, communityCards, revealTokens, submitCardDecryption]);
+
   // Reset on new hand
   useEffect(() => {
     if (hand) {
       setMyHoleCards(null);
       revealedPhasesRef.current.clear();
+      submittedDecryptionsRef.current.clear();
     }
   }, [hand?.handId]);
 

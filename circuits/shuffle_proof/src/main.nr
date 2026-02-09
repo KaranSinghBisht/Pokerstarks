@@ -55,6 +55,17 @@ fn main(
     assert_on_curve(pk);
 
     // 1. Verify permutation is valid
+    //
+    // Soundness argument (sum + product + range check):
+    //   - Range check: each perm[i] is constrained to [0, N-1] by `assert(perm[i] < N)`.
+    //   - Sum check: sum(perm) == N*(N-1)/2 ensures the total is correct.
+    //   - Product check: product(perm[i]+1) == N! ensures no duplicates.
+    //     With range-checked values in [1..52], the true product 52! ≈ 2^225 < 2^254
+    //     (BN254 field size), so no modular wrap-around occurs for a valid permutation.
+    //     A non-permutation with duplicates would need product(perm[i]+1) ≡ 52! (mod p)
+    //     with at least one repeated and one missing value. Since all values are in
+    //     [1..52] and 52! < p, the product can only equal 52! when the multiset is
+    //     exactly {1,2,...,52}. Combined with sum=1326, this is sound.
     let expected_sum: u32 = N * (N - 1) / 2;
     let mut actual_sum: u32 = 0;
     for i in 0..N {

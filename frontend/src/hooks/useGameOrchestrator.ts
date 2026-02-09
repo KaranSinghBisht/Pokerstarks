@@ -74,6 +74,7 @@ export function useGameOrchestrator(tableId: number) {
     myAddress: address,
     session,
     submitRevealToken: actions.submitRevealToken,
+    submitCardDecryption: actions.submitCardDecryption,
     currentDeckData: currentDeck?.cards ?? null,
     revealTokens,
   });

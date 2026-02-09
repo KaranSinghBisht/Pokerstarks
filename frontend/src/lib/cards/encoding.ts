@@ -22,16 +22,16 @@ import { GENERATOR, scalarMul, type Point } from "./elgamal";
 export const CARD_POINTS: Point[] = [];
 
 /**
- * Reverse lookup: maps point x-coordinate (as string) to card ID.
- * We use x-coordinate only since each card point has a unique x.
+ * Reverse lookup: maps point (x,y) coordinates to card ID.
+ * Uses both coordinates to eliminate P/-P ambiguity on the curve.
  */
-const X_TO_CARD_ID: Map<string, number> = new Map();
+const POINT_TO_CARD_ID: Map<string, number> = new Map();
 
 // Precompute all 52 card points
 for (let i = 0; i < 52; i++) {
   const point = scalarMul(GENERATOR, BigInt(i + 1))!;
   CARD_POINTS.push(point);
-  X_TO_CARD_ID.set(point.x.toString(), i);
+  POINT_TO_CARD_ID.set(`${point.x.toString()},${point.y.toString()}`, i);
 }
 
 // ───────────────────── Encoding Functions ─────────────────────
@@ -49,7 +49,8 @@ export function cardIdToPoint(cardId: number): Point {
  * Returns -1 if the point doesn't match any known card.
  */
 export function pointToCardId(point: Point): number {
-  const id = X_TO_CARD_ID.get(point.x.toString());
+  const key = `${point.x.toString()},${point.y.toString()}`;
+  const id = POINT_TO_CARD_ID.get(key);
   return id !== undefined ? id : -1;
 }
 

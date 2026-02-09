@@ -202,7 +202,8 @@ pub mod lobby_system {
                         let token = IERC20Dispatcher {
                             contract_address: table.token_address,
                         };
-                        token.transfer(caller, seat.chips.into());
+                        let success = token.transfer(caller, seat.chips.into());
+                        assert(success, 'chip refund failed');
                     }
 
                     let empty_seat = Seat {

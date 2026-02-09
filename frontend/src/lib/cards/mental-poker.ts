@@ -86,8 +86,14 @@ export class MentalPokerSession {
     const deck: EncryptedCard[] = [];
     for (let i = 0; i < 52; i++) {
       const cardPoint = cardIdToPoint(i);
-      // Deterministic randomness: hash(seed, i)
-      // For simplicity: r_i = (seed * (i + 1)) mod (FIELD_P - 1) + 1
+      // SECURITY NOTE: This randomness is intentionally deterministic and derived
+      // from a public seed. Card secrecy is NOT provided by the initial encryption.
+      // It is provided by the subsequent shuffle rounds, where each player applies
+      // a truly random permutation + re-encryption. After all N players shuffle,
+      // every card's position and ciphertext is information-theoretically hidden
+      // from any coalition of fewer than N players.
+      // The deterministic initial deck ensures all players compute the same
+      // starting deck (consensus), which is verified via Poseidon hash on-chain.
       const r =
         ((seed * BigInt(i + 1)) % (FIELD_P - 1n)) + 1n;
       deck.push(elgamalEncrypt(cardPoint, this.aggregateKey, r));

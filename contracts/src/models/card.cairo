@@ -34,6 +34,21 @@ pub struct CommunityCards {
     pub river_pos: u8,
 }
 
+// Card decryption votes for consensus-based card verification (F-03).
+// All active players must agree on the decrypted card ID for each position.
+#[derive(Copy, Drop, Serde, Debug)]
+#[dojo::model]
+pub struct CardDecryptionVote {
+    #[key]
+    pub hand_id: u64,
+    #[key]
+    pub card_position: u8,
+    #[key]
+    pub voter_seat: u8,
+    pub card_id: u8,
+    pub submitted: bool,
+}
+
 // Side pots for all-in scenarios
 // pot_index 0 = main pot, 1+ = side pots (in order of creation)
 #[derive(Copy, Drop, Serde, Debug)]

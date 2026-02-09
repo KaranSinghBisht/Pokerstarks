@@ -1,11 +1,11 @@
 #[starknet::interface]
 pub trait IShowdown<T> {
-    /// Player reveals their hole cards by providing the card IDs
-    /// (computed off-chain from the collected reveal tokens)
-    fn reveal_hand(ref self: T, hand_id: u64, card_1_id: u8, card_2_id: u8);
-    /// Called by anyone to set community card IDs once reveal tokens are collected
-    fn set_community_cards(ref self: T, hand_id: u64, flop_1: u8, flop_2: u8, flop_3: u8, turn_card: u8, river_card: u8);
-    /// Called after all remaining players have revealed to determine the winner
+    /// Submit a decrypted card ID for a specific deck position.
+    /// ALL active players must submit the same card_id for consensus.
+    fn submit_card_decryption(
+        ref self: T, hand_id: u64, card_position: u8, card_id: u8,
+    );
+    /// Called after all card positions have reached consensus to determine the winner
     fn compute_winner(ref self: T, hand_id: u64);
 }
 
@@ -20,7 +20,7 @@ pub mod showdown_system {
     use starknet::get_caller_address;
     use super::{IShowdown, IERC20Dispatcher, IERC20DispatcherTrait};
     use crate::models::hand::{Hand, PlayerHand};
-    use crate::models::card::CommunityCards;
+    use crate::models::card::{RevealToken, CommunityCards, CardDecryptionVote};
     use crate::models::table::{Table, Seat};
     use crate::models::enums::GamePhase;
     use crate::utils::hand_evaluator::evaluate_best_hand;
@@ -30,12 +30,20 @@ pub mod showdown_system {
 
     #[abi(embed_v0)]
     impl ShowdownImpl of IShowdown<ContractState> {
-        fn reveal_hand(ref self: ContractState, hand_id: u64, card_1_id: u8, card_2_id: u8) {
+        fn submit_card_decryption(
+            ref self: ContractState,
+            hand_id: u64,
+            card_position: u8,
+            card_id: u8,
+        ) {
             let mut world = self.world_default();
             let caller = get_caller_address();
 
             let hand: Hand = world.read_model(hand_id);
             assert(hand.phase == GamePhase::Showdown, 'not showdown phase');
+
+            assert(card_id < 52, 'invalid card id');
+            assert(card_position < 52, 'invalid card position');
 
             // Find caller's seat
             let table: Table = world.read_model(hand.table_id);
@@ -51,108 +59,99 @@ pub mod showdown_system {
             };
             assert(seat_idx != 255, 'player not at table');
 
-            let mut ph: PlayerHand = world.read_model((hand_id, seat_idx));
+            let ph: PlayerHand = world.read_model((hand_id, seat_idx));
             assert(!ph.has_folded, 'player folded');
-            assert(ph.hole_card_1_id == CARD_NOT_DEALT, 'already revealed');
 
-            // Validate card IDs
-            assert(card_1_id < 52 && card_2_id < 52, 'invalid card id');
-            assert(card_1_id != card_2_id, 'cards must be different');
+            // Check not already submitted for this position
+            let existing: CardDecryptionVote = world
+                .read_model((hand_id, card_position, seat_idx));
+            assert(!existing.submitted, 'already voted');
 
-            // Check these cards aren't claimed by another player
+            // Verify that reveal tokens exist for this card position,
+            // proving the card CAN be decrypted.
+            let tokens_collected = count_tokens_for_position(
+                ref world, hand_id, card_position, table.max_players,
+            );
+            let required = get_required_tokens_for_card(
+                ref world, hand_id, card_position, table.max_players,
+            );
+            assert(tokens_collected >= required, 'tokens not collected');
+
+            // Store the vote
+            let vote = CardDecryptionVote {
+                hand_id, card_position, voter_seat: seat_idx, card_id, submitted: true,
+            };
+            world.write_model(@vote);
+
+            // Count votes and check consensus
+            let active_count = count_active_players(ref world, hand_id, table.max_players);
+            let mut vote_count: u8 = 0;
+            let mut all_agree = true;
+            let mut first_card_id: u8 = card_id;
             let mut j: u8 = 0;
             while j < table.max_players {
-                if j != seat_idx {
-                    let other_ph: PlayerHand = world.read_model((hand_id, j));
-                    if other_ph.player != 0.try_into().unwrap()
-                        && other_ph.hole_card_1_id != CARD_NOT_DEALT {
-                        assert(
-                            other_ph.hole_card_1_id != card_1_id
-                                && other_ph.hole_card_1_id != card_2_id
-                                && other_ph.hole_card_2_id != card_1_id
-                                && other_ph.hole_card_2_id != card_2_id,
-                            'card already claimed',
-                        );
+                let v: CardDecryptionVote = world.read_model((hand_id, card_position, j));
+                if v.submitted {
+                    vote_count += 1;
+                    if vote_count == 1 {
+                        first_card_id = v.card_id;
+                    } else if v.card_id != first_card_id {
+                        all_agree = false;
                     }
                 }
                 j += 1;
             };
 
-            // Check cards don't conflict with community cards
-            let comm: CommunityCards = world.read_model(hand_id);
-            if comm.flop_1 != CARD_NOT_DEALT {
-                assert(
-                    card_1_id != comm.flop_1 && card_1_id != comm.flop_2
-                        && card_1_id != comm.flop_3 && card_1_id != comm.turn
-                        && card_1_id != comm.river,
-                    'card conflicts community',
-                );
-                assert(
-                    card_2_id != comm.flop_1 && card_2_id != comm.flop_2
-                        && card_2_id != comm.flop_3 && card_2_id != comm.turn
-                        && card_2_id != comm.river,
-                    'card conflicts community',
-                );
-            }
+            // When all active players have voted, resolve
+            if vote_count == active_count {
+                assert(all_agree, 'card decryption disagreement');
 
-            // Store revealed card IDs
-            // The off-chain client computes: M = C2 - sum(tokens) and maps M back to card_id
-            ph.hole_card_1_id = card_1_id;
-            ph.hole_card_2_id = card_2_id;
-            world.write_model(@ph);
-        }
+                // Consensus reached — store the accepted card ID
+                let comm: CommunityCards = world.read_model(hand_id);
 
-        /// Set community card IDs. Called by any participant once the reveal tokens
-        /// have been submitted for each community card position. The client decrypts
-        /// the cards off-chain and submits the results.
-        fn set_community_cards(
-            ref self: ContractState,
-            hand_id: u64,
-            flop_1: u8,
-            flop_2: u8,
-            flop_3: u8,
-            turn_card: u8,
-            river_card: u8,
-        ) {
-            let mut world = self.world_default();
-            let caller = get_caller_address();
-
-            let hand: Hand = world.read_model(hand_id);
-            assert(hand.phase == GamePhase::Showdown, 'not showdown phase');
-
-            // Verify caller is a seated player
-            let table: Table = world.read_model(hand.table_id);
-            let mut is_player = false;
-            let mut i: u8 = 0;
-            while i < table.max_players {
-                let seat: Seat = world.read_model((hand.table_id, i));
-                if seat.is_occupied && seat.player == caller {
-                    is_player = true;
-                    break;
+                // Is this a community card position?
+                if card_position == comm.flop_1_pos {
+                    let mut c: CommunityCards = world.read_model(hand_id);
+                    c.flop_1 = first_card_id;
+                    world.write_model(@c);
+                } else if card_position == comm.flop_2_pos {
+                    let mut c: CommunityCards = world.read_model(hand_id);
+                    c.flop_2 = first_card_id;
+                    world.write_model(@c);
+                } else if card_position == comm.flop_3_pos {
+                    let mut c: CommunityCards = world.read_model(hand_id);
+                    c.flop_3 = first_card_id;
+                    world.write_model(@c);
+                } else if card_position == comm.turn_pos {
+                    let mut c: CommunityCards = world.read_model(hand_id);
+                    c.turn = first_card_id;
+                    world.write_model(@c);
+                } else if card_position == comm.river_pos {
+                    let mut c: CommunityCards = world.read_model(hand_id);
+                    c.river = first_card_id;
+                    world.write_model(@c);
+                } else {
+                    // It's a hole card — find whose hole card position this is
+                    let mut k: u8 = 0;
+                    while k < table.max_players {
+                        let mut player_ph: PlayerHand = world.read_model((hand_id, k));
+                        if player_ph.player != ZERO_ADDR.try_into().unwrap() {
+                            if player_ph.hole_card_1_pos == card_position
+                                && player_ph.hole_card_1_id == CARD_NOT_DEALT {
+                                player_ph.hole_card_1_id = first_card_id;
+                                world.write_model(@player_ph);
+                                break;
+                            } else if player_ph.hole_card_2_pos == card_position
+                                && player_ph.hole_card_2_id == CARD_NOT_DEALT {
+                                player_ph.hole_card_2_id = first_card_id;
+                                world.write_model(@player_ph);
+                                break;
+                            }
+                        }
+                        k += 1;
+                    };
                 }
-                i += 1;
-            };
-            assert(is_player, 'not a table player');
-
-            let mut comm: CommunityCards = world.read_model(hand_id);
-            assert(comm.flop_1 == CARD_NOT_DEALT, 'community already set');
-
-            // Validate all card IDs
-            assert(flop_1 < 52 && flop_2 < 52 && flop_3 < 52, 'invalid card id');
-            assert(turn_card < 52 && river_card < 52, 'invalid card id');
-
-            // Ensure all 5 community cards are distinct
-            assert(flop_1 != flop_2 && flop_1 != flop_3 && flop_1 != turn_card && flop_1 != river_card, 'duplicate community card');
-            assert(flop_2 != flop_3 && flop_2 != turn_card && flop_2 != river_card, 'duplicate community card');
-            assert(flop_3 != turn_card && flop_3 != river_card, 'duplicate community card');
-            assert(turn_card != river_card, 'duplicate community card');
-
-            comm.flop_1 = flop_1;
-            comm.flop_2 = flop_2;
-            comm.flop_3 = flop_3;
-            comm.turn = turn_card;
-            comm.river = river_card;
-            world.write_model(@comm);
+            }
         }
 
         fn compute_winner(ref self: ContractState, hand_id: u64) {
@@ -191,7 +190,6 @@ pub mod showdown_system {
             while j < table.max_players {
                 let ph: PlayerHand = world.read_model((hand_id, j));
                 if ph.player != 0.try_into().unwrap() && !ph.has_folded {
-                    // Build 7-card hand: 2 hole + 5 community
                     let cards = array![
                         ph.hole_card_1_id,
                         ph.hole_card_2_id,
@@ -225,11 +223,11 @@ pub mod showdown_system {
                 };
                 hand.pot -= rake;
 
-                // Transfer rake to house wallet via ERC20 (if token is set)
                 if table.token_address != ZERO_ADDR.try_into().unwrap()
                     && table.rake_recipient != ZERO_ADDR.try_into().unwrap() {
                     let token = IERC20Dispatcher { contract_address: table.token_address };
-                    token.transfer(table.rake_recipient, rake.into());
+                    let success = token.transfer(table.rake_recipient, rake.into());
+                    assert(success, 'rake transfer failed');
                 }
             }
 
@@ -259,7 +257,6 @@ pub mod showdown_system {
             // Distribute pot equally among winners (remainder to first winner)
             let share = hand.pot / winner_count;
             let remainder = hand.pot % winner_count;
-            let mut distributed: u128 = 0;
             let mut first_winner = true;
             let mut d: u8 = 0;
             while d < table.max_players {
@@ -285,7 +282,6 @@ pub mod showdown_system {
                             share
                         };
                         winner_seat_model.chips += award;
-                        distributed += award;
                         world.write_model(@winner_seat_model);
                     }
                 }
@@ -297,6 +293,58 @@ pub mod showdown_system {
             hand.phase = GamePhase::Settling;
             world.write_model(@hand);
         }
+    }
+
+    fn count_active_players(
+        ref world: dojo::world::WorldStorage, hand_id: u64, max_players: u8,
+    ) -> u8 {
+        let mut count: u8 = 0;
+        let mut i: u8 = 0;
+        while i < max_players {
+            let ph: PlayerHand = world.read_model((hand_id, i));
+            if ph.player != 0.try_into().unwrap() && !ph.has_folded {
+                count += 1;
+            }
+            i += 1;
+        };
+        count
+    }
+
+    fn count_tokens_for_position(
+        ref world: dojo::world::WorldStorage, hand_id: u64, card_position: u8, max_players: u8,
+    ) -> u8 {
+        let mut count: u8 = 0;
+        let mut i: u8 = 0;
+        while i < max_players {
+            let token: RevealToken = world.read_model((hand_id, card_position, i));
+            if token.proof_verified {
+                count += 1;
+            }
+            i += 1;
+        };
+        count
+    }
+
+    fn get_required_tokens_for_card(
+        ref world: dojo::world::WorldStorage,
+        hand_id: u64,
+        card_position: u8,
+        max_players: u8,
+    ) -> u8 {
+        let active = count_active_players(ref world, hand_id, max_players);
+        let comm: CommunityCards = world.read_model(hand_id);
+
+        // Community cards need tokens from ALL active players
+        if card_position == comm.flop_1_pos
+            || card_position == comm.flop_2_pos
+            || card_position == comm.flop_3_pos
+            || card_position == comm.turn_pos
+            || card_position == comm.river_pos {
+            return active;
+        }
+
+        // Hole cards need tokens from (active - 1) players
+        if active > 0 { active - 1 } else { 0 }
     }
 
     #[generate_trait]

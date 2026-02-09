@@ -90,8 +90,7 @@ const SESSION_POLICIES: SessionPolicies = {
       ? {
           [process.env.NEXT_PUBLIC_SHOWDOWN_ADDRESS]: {
             methods: [
-              { entrypoint: "reveal_hand" },
-              { entrypoint: "set_community_cards" },
+              { entrypoint: "submit_card_decryption" },
               { entrypoint: "compute_winner" },
             ],
           },
