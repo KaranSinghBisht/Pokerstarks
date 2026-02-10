@@ -169,9 +169,11 @@ export function useReveal({
     const pos2 = myPlayerHand.holeCard2Pos;
     if (pos1 === 0 && pos2 === 0) return; // Not yet assigned
 
-    // Check if we have enough tokens for our hole cards
-    const activePlayers = playerHands.filter((ph) => !ph.hasFolded && ph.player !== "").length;
-    const requiredTokens = activePlayers - 1; // Everyone except us
+    // A-05 FIX: Use numPlayers (all original hand participants) instead of active players.
+    // In n-of-n aggregate-key ElGamal, ALL players' tokens are needed for decryption,
+    // regardless of fold status.
+    const numPlayers = hand?.numPlayers ?? 0;
+    const requiredTokens = numPlayers > 0 ? numPlayers - 1 : 0; // Everyone except us
 
     const tokensForCard1 = revealTokens.filter(
       (t) => t.handId === myPlayerHand.handId && t.cardPosition === pos1 && t.proofVerified
@@ -203,7 +205,7 @@ export function useReveal({
     } catch (err) {
       console.error("Card decryption failed:", err);
     }
-  }, [session, myPlayerHand, currentDeckData, revealTokens, mySeat, playerHands, myHoleCards]);
+  }, [session, myPlayerHand, currentDeckData, revealTokens, mySeat, playerHands, myHoleCards, hand]);
 
   // Auto-submit card decryption votes during Showdown phase
   // Each player decrypts all visible cards and submits the card_id for consensus
@@ -235,7 +237,9 @@ export function useReveal({
           if (ph.holeCard2Pos) positions.push(ph.holeCard2Pos);
         }
 
-        const activePlayers = playerHands.filter((ph) => !ph.hasFolded && ph.player !== "").length;
+        // A-05 FIX: Use numPlayers (all original hand participants) for token requirements.
+        // In n-of-n ElGamal, ALL players' tokens are needed regardless of fold status.
+        const numPlayers = hand.numPlayers ?? 0;
 
         for (const pos of positions) {
           const key = `${hand.handId}-${pos}`;
@@ -254,7 +258,7 @@ export function useReveal({
               pos === communityCards.flop3Pos ||
               pos === communityCards.turnPos ||
               pos === communityCards.riverPos);
-          const required = isCommunity ? activePlayers : activePlayers - 1;
+          const required = isCommunity ? numPlayers : (numPlayers > 0 ? numPlayers - 1 : 0);
 
           if (tokensForPos.length < required) continue;
 

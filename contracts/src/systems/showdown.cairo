@@ -20,7 +20,7 @@ pub mod showdown_system {
     use starknet::get_caller_address;
     use super::{IShowdown, IERC20Dispatcher, IERC20DispatcherTrait};
     use crate::models::hand::{Hand, PlayerHand};
-    use crate::models::card::{RevealToken, CommunityCards, CardDecryptionVote};
+    use crate::models::card::{RevealToken, CommunityCards, CardDecryptionVote, SidePot};
     use crate::models::table::{Table, Seat};
     use crate::models::enums::GamePhase;
     use crate::utils::hand_evaluator::evaluate_best_hand;
@@ -163,16 +163,38 @@ pub mod showdown_system {
             let table: Table = world.read_model(hand.table_id);
             let comm: CommunityCards = world.read_model(hand_id);
 
-            // Verify all community cards are revealed
-            assert(comm.flop_1 != CARD_NOT_DEALT, 'community cards not set');
+            // A-06 FIX: Verify ALL 5 community cards are revealed (not just flop_1)
+            assert(comm.flop_1 != CARD_NOT_DEALT, 'flop_1 not dealt');
+            assert(comm.flop_2 != CARD_NOT_DEALT, 'flop_2 not dealt');
+            assert(comm.flop_3 != CARD_NOT_DEALT, 'flop_3 not dealt');
+            assert(comm.turn != CARD_NOT_DEALT, 'turn not dealt');
+            assert(comm.river != CARD_NOT_DEALT, 'river not dealt');
 
-            // Check all non-folded players have revealed
+            // A-06 FIX: Validate community card IDs in range and unique
+            assert(comm.flop_1 < 52, 'invalid flop_1 id');
+            assert(comm.flop_2 < 52, 'invalid flop_2 id');
+            assert(comm.flop_3 < 52, 'invalid flop_3 id');
+            assert(comm.turn < 52, 'invalid turn id');
+            assert(comm.river < 52, 'invalid river id');
+            assert(comm.flop_1 != comm.flop_2, 'duplicate community card');
+            assert(comm.flop_1 != comm.flop_3, 'duplicate community card');
+            assert(comm.flop_1 != comm.turn, 'duplicate community card');
+            assert(comm.flop_1 != comm.river, 'duplicate community card');
+            assert(comm.flop_2 != comm.flop_3, 'duplicate community card');
+            assert(comm.flop_2 != comm.turn, 'duplicate community card');
+            assert(comm.flop_2 != comm.river, 'duplicate community card');
+            assert(comm.flop_3 != comm.turn, 'duplicate community card');
+            assert(comm.flop_3 != comm.river, 'duplicate community card');
+            assert(comm.turn != comm.river, 'duplicate community card');
+
+            // A-06 FIX: Check all non-folded players have BOTH hole cards revealed
             let mut all_revealed = true;
             let mut i: u8 = 0;
             while i < table.max_players {
                 let ph: PlayerHand = world.read_model((hand_id, i));
                 if ph.player != 0.try_into().unwrap() && !ph.has_folded {
-                    if ph.hole_card_1_id == CARD_NOT_DEALT {
+                    if ph.hole_card_1_id == CARD_NOT_DEALT
+                        || ph.hole_card_2_id == CARD_NOT_DEALT {
                         all_revealed = false;
                         break;
                     }
@@ -190,6 +212,21 @@ pub mod showdown_system {
             while j < table.max_players {
                 let ph: PlayerHand = world.read_model((hand_id, j));
                 if ph.player != 0.try_into().unwrap() && !ph.has_folded {
+                    // A-06 FIX: Validate hole card ranges and uniqueness
+                    assert(ph.hole_card_1_id < 52, 'invalid hole card 1');
+                    assert(ph.hole_card_2_id < 52, 'invalid hole card 2');
+                    assert(ph.hole_card_1_id != ph.hole_card_2_id, 'duplicate hole cards');
+                    assert(ph.hole_card_1_id != comm.flop_1, 'hole dupes community');
+                    assert(ph.hole_card_1_id != comm.flop_2, 'hole dupes community');
+                    assert(ph.hole_card_1_id != comm.flop_3, 'hole dupes community');
+                    assert(ph.hole_card_1_id != comm.turn, 'hole dupes community');
+                    assert(ph.hole_card_1_id != comm.river, 'hole dupes community');
+                    assert(ph.hole_card_2_id != comm.flop_1, 'hole dupes community');
+                    assert(ph.hole_card_2_id != comm.flop_2, 'hole dupes community');
+                    assert(ph.hole_card_2_id != comm.flop_3, 'hole dupes community');
+                    assert(ph.hole_card_2_id != comm.turn, 'hole dupes community');
+                    assert(ph.hole_card_2_id != comm.river, 'hole dupes community');
+
                     let cards = array![
                         ph.hole_card_1_id,
                         ph.hole_card_2_id,
@@ -214,6 +251,7 @@ pub mod showdown_system {
             assert(winner_seat != 255, 'no winner found');
 
             // Deduct rake before distribution
+            let mut total_rake: u128 = 0;
             if table.rake_bps > 0 {
                 let rake_amount = hand.pot * table.rake_bps.into() / 10000;
                 let rake = if rake_amount > table.rake_cap {
@@ -221,6 +259,7 @@ pub mod showdown_system {
                 } else {
                     rake_amount
                 };
+                total_rake = rake;
                 hand.pot -= rake;
 
                 if table.token_address != ZERO_ADDR.try_into().unwrap()
@@ -231,62 +270,195 @@ pub mod showdown_system {
                 }
             }
 
-            // Split pot: find ALL players with the same best hand
-            let mut winner_count: u128 = 0;
-            let mut w: u8 = 0;
-            while w < table.max_players {
-                let wph: PlayerHand = world.read_model((hand_id, w));
-                if wph.player != 0.try_into().unwrap() && !wph.has_folded {
-                    let wcards = array![
-                        wph.hole_card_1_id,
-                        wph.hole_card_2_id,
-                        comm.flop_1,
-                        comm.flop_2,
-                        comm.flop_3,
-                        comm.turn,
-                        comm.river,
-                    ];
-                    let (wrank, wtb) = evaluate_best_hand(wcards.span());
-                    if wrank == best_rank && wtb == best_tb {
-                        winner_count += 1;
-                    }
-                }
-                w += 1;
-            };
+            // A-07 FIX: Check if side pots exist. If so, distribute per-pot.
+            // Otherwise fall back to single-pot distribution (backward compatible).
+            let first_side_pot: SidePot = world.read_model((hand_id, 0_u8));
+            let has_side_pots = first_side_pot.amount > 0;
 
-            // Distribute pot equally among winners (remainder to first winner)
-            let share = hand.pot / winner_count;
-            let remainder = hand.pot % winner_count;
-            let mut first_winner = true;
-            let mut d: u8 = 0;
-            while d < table.max_players {
-                let dph: PlayerHand = world.read_model((hand_id, d));
-                if dph.player != 0.try_into().unwrap() && !dph.has_folded {
-                    let dcards = array![
-                        dph.hole_card_1_id,
-                        dph.hole_card_2_id,
-                        comm.flop_1,
-                        comm.flop_2,
-                        comm.flop_3,
-                        comm.turn,
-                        comm.river,
-                    ];
-                    let (drank, dtb) = evaluate_best_hand(dcards.span());
-                    if drank == best_rank && dtb == best_tb {
-                        let mut winner_seat_model: Seat = world
-                            .read_model((hand.table_id, d));
-                        let award = if first_winner {
-                            first_winner = false;
-                            share + remainder
-                        } else {
-                            share
-                        };
-                        winner_seat_model.chips += award;
-                        world.write_model(@winner_seat_model);
+            if has_side_pots {
+                // Distribute each side pot to its winner(s)
+                // Deduct proportional rake from each pot
+                let mut pot_idx: u8 = 0;
+                let mut total_pot_sum: u128 = 0;
+
+                // First pass: sum all side pot amounts for rake proportion
+                let mut sum_idx: u8 = 0;
+                while sum_idx < 10 { // max 10 side pots (more than enough for 6 players)
+                    let sp: SidePot = world.read_model((hand_id, sum_idx));
+                    if sp.amount == 0 {
+                        break;
                     }
-                }
-                d += 1;
-            };
+                    total_pot_sum += sp.amount;
+                    sum_idx += 1;
+                };
+
+                // Second pass: distribute each pot
+                while pot_idx < 10 {
+                    let sp: SidePot = world.read_model((hand_id, pot_idx));
+                    if sp.amount == 0 {
+                        break;
+                    }
+
+                    // Proportional rake for this pot
+                    let pot_rake = if total_pot_sum > 0 {
+                        total_rake * sp.amount / total_pot_sum
+                    } else {
+                        0
+                    };
+                    let distributable = sp.amount - pot_rake;
+
+                    // Find best hand among eligible players for this pot
+                    let mut pot_best_rank: u8 = 0;
+                    let mut pot_best_tb: u32 = 0;
+                    let mut ep: u8 = 0;
+                    while ep < table.max_players {
+                        // Check if this seat is eligible (bit set in mask)
+                        if (sp.eligible_mask & shl_u8(1, ep)) != 0 {
+                            let eph: PlayerHand = world.read_model((hand_id, ep));
+                            if eph.player != 0.try_into().unwrap() && !eph.has_folded {
+                                let ecards = array![
+                                    eph.hole_card_1_id,
+                                    eph.hole_card_2_id,
+                                    comm.flop_1,
+                                    comm.flop_2,
+                                    comm.flop_3,
+                                    comm.turn,
+                                    comm.river,
+                                ];
+                                let (erank, etb) = evaluate_best_hand(ecards.span());
+                                if erank > pot_best_rank
+                                    || (erank == pot_best_rank && etb > pot_best_tb) {
+                                    pot_best_rank = erank;
+                                    pot_best_tb = etb;
+                                }
+                            }
+                        }
+                        ep += 1;
+                    };
+
+                    // Count winners and distribute
+                    let mut pot_winner_count: u128 = 0;
+                    let mut wc: u8 = 0;
+                    while wc < table.max_players {
+                        if (sp.eligible_mask & shl_u8(1, wc)) != 0 {
+                            let wph: PlayerHand = world.read_model((hand_id, wc));
+                            if wph.player != 0.try_into().unwrap() && !wph.has_folded {
+                                let wcards = array![
+                                    wph.hole_card_1_id,
+                                    wph.hole_card_2_id,
+                                    comm.flop_1,
+                                    comm.flop_2,
+                                    comm.flop_3,
+                                    comm.turn,
+                                    comm.river,
+                                ];
+                                let (wr, wt) = evaluate_best_hand(wcards.span());
+                                if wr == pot_best_rank && wt == pot_best_tb {
+                                    pot_winner_count += 1;
+                                }
+                            }
+                        }
+                        wc += 1;
+                    };
+
+                    if pot_winner_count > 0 {
+                        let pot_share = distributable / pot_winner_count;
+                        let pot_remainder = distributable % pot_winner_count;
+                        let mut first_pot_winner = true;
+                        let mut dp: u8 = 0;
+                        while dp < table.max_players {
+                            if (sp.eligible_mask & shl_u8(1, dp)) != 0 {
+                                let dph: PlayerHand = world.read_model((hand_id, dp));
+                                if dph.player != 0.try_into().unwrap() && !dph.has_folded {
+                                    let dcards = array![
+                                        dph.hole_card_1_id,
+                                        dph.hole_card_2_id,
+                                        comm.flop_1,
+                                        comm.flop_2,
+                                        comm.flop_3,
+                                        comm.turn,
+                                        comm.river,
+                                    ];
+                                    let (dr, dt) = evaluate_best_hand(dcards.span());
+                                    if dr == pot_best_rank && dt == pot_best_tb {
+                                        let mut ws: Seat = world
+                                            .read_model((hand.table_id, dp));
+                                        let award = if first_pot_winner {
+                                            first_pot_winner = false;
+                                            pot_share + pot_remainder
+                                        } else {
+                                            pot_share
+                                        };
+                                        ws.chips += award;
+                                        world.write_model(@ws);
+                                    }
+                                }
+                            }
+                            dp += 1;
+                        };
+                    }
+
+                    pot_idx += 1;
+                };
+            } else {
+                // No side pots — single pot distribution (original logic)
+                // Split pot: find ALL players with the same best hand
+                let mut winner_count: u128 = 0;
+                let mut w: u8 = 0;
+                while w < table.max_players {
+                    let wph: PlayerHand = world.read_model((hand_id, w));
+                    if wph.player != 0.try_into().unwrap() && !wph.has_folded {
+                        let wcards = array![
+                            wph.hole_card_1_id,
+                            wph.hole_card_2_id,
+                            comm.flop_1,
+                            comm.flop_2,
+                            comm.flop_3,
+                            comm.turn,
+                            comm.river,
+                        ];
+                        let (wrank, wtb) = evaluate_best_hand(wcards.span());
+                        if wrank == best_rank && wtb == best_tb {
+                            winner_count += 1;
+                        }
+                    }
+                    w += 1;
+                };
+
+                // Distribute pot equally among winners (remainder to first winner)
+                let share = hand.pot / winner_count;
+                let remainder = hand.pot % winner_count;
+                let mut first_winner = true;
+                let mut d: u8 = 0;
+                while d < table.max_players {
+                    let dph: PlayerHand = world.read_model((hand_id, d));
+                    if dph.player != 0.try_into().unwrap() && !dph.has_folded {
+                        let dcards = array![
+                            dph.hole_card_1_id,
+                            dph.hole_card_2_id,
+                            comm.flop_1,
+                            comm.flop_2,
+                            comm.flop_3,
+                            comm.turn,
+                            comm.river,
+                        ];
+                        let (drank, dtb) = evaluate_best_hand(dcards.span());
+                        if drank == best_rank && dtb == best_tb {
+                            let mut winner_seat_model: Seat = world
+                                .read_model((hand.table_id, d));
+                            let award = if first_winner {
+                                first_winner = false;
+                                share + remainder
+                            } else {
+                                share
+                            };
+                            winner_seat_model.chips += award;
+                            world.write_model(@winner_seat_model);
+                        }
+                    }
+                    d += 1;
+                };
+            }
 
             // Transition to settling
             hand.pot = 0;
@@ -325,26 +497,38 @@ pub mod showdown_system {
         count
     }
 
+    /// Bit shift left for u8 (1 << n)
+    fn shl_u8(val: u8, shift: u8) -> u8 {
+        if shift == 0 { return val; }
+        if shift == 1 { return val * 2; }
+        if shift == 2 { return val * 4; }
+        if shift == 3 { return val * 8; }
+        if shift == 4 { return val * 16; }
+        if shift == 5 { return val * 32; }
+        0 // shift >= 6 would overflow u8 for val=1
+    }
+
+    /// A-05 FIX: Use num_players (n-of-n) instead of active_players for token requirements.
     fn get_required_tokens_for_card(
         ref world: dojo::world::WorldStorage,
         hand_id: u64,
         card_position: u8,
-        max_players: u8,
+        _max_players: u8,
     ) -> u8 {
-        let active = count_active_players(ref world, hand_id, max_players);
+        let hand: Hand = world.read_model(hand_id);
         let comm: CommunityCards = world.read_model(hand_id);
 
-        // Community cards need tokens from ALL active players
+        // Community cards need tokens from ALL original players
         if card_position == comm.flop_1_pos
             || card_position == comm.flop_2_pos
             || card_position == comm.flop_3_pos
             || card_position == comm.turn_pos
             || card_position == comm.river_pos {
-            return active;
+            return hand.num_players;
         }
 
-        // Hole cards need tokens from (active - 1) players
-        if active > 0 { active - 1 } else { 0 }
+        // Hole cards need tokens from (num_players - 1) players
+        if hand.num_players > 0 { hand.num_players - 1 } else { 0 }
     }
 
     #[generate_trait]

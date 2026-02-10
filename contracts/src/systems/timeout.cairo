@@ -67,9 +67,19 @@ pub mod timeout_system {
                         // Not enough players to continue, abort hand
                         hand.phase = GamePhase::Settling;
                     } else {
-                        // Skip this shuffler: advance progress
-                        // The skipped player's shuffle slot is bypassed;
-                        // remaining players still shuffle in order
+                        // A-04 FIX: Copy the previous deck version as an identity shuffle
+                        // so the deck version chain remains contiguous (0, 1, ..., num_players).
+                        // Without this, dealing reads a non-existent deck version and crashes.
+                        use crate::models::deck::EncryptedDeck;
+                        let prev_deck: EncryptedDeck = world
+                            .read_model((hand_id, hand.shuffle_progress));
+                        let identity_deck = EncryptedDeck {
+                            hand_id,
+                            version: hand.shuffle_progress + 1,
+                            cards: prev_deck.cards,
+                        };
+                        world.write_model(@identity_deck);
+
                         hand.shuffle_progress += 1;
 
                         // Recount how many active (non-folded) players remain
@@ -95,9 +105,10 @@ pub mod timeout_system {
                 | GamePhase::DealingFlop
                 | GamePhase::DealingTurn
                 | GamePhase::DealingRiver => {
-                    // Find players who haven't submitted required reveal tokens
-                    // and fold them so the game can progress
-                    let mut folded_any = false;
+                    // A-05 FIX: In n-of-n aggregate-key ElGamal, if ANY player fails
+                    // to submit reveal tokens, the remaining players cannot decrypt.
+                    // The only correct action is to abort the hand.
+                    // Mark timed-out players as sitting out for future hands.
                     let mut i: u8 = 0;
                     while i < max {
                         let ph: PlayerHand = world.read_model((hand_id, i));
@@ -105,13 +116,6 @@ pub mod timeout_system {
                             if !has_submitted_all_required_tokens(
                                 ref world, hand_id, i, hand.phase, max,
                             ) {
-                                // Fold this player for timing out
-                                let mut fold_ph: PlayerHand = world.read_model((hand_id, i));
-                                fold_ph.has_folded = true;
-                                world.write_model(@fold_ph);
-                                hand.active_players -= 1;
-                                folded_any = true;
-
                                 let mut seat: Seat = world.read_model((hand.table_id, i));
                                 seat.is_sitting_out = true;
                                 world.write_model(@seat);
@@ -120,12 +124,7 @@ pub mod timeout_system {
                         i += 1;
                     };
 
-                    if hand.active_players <= 1 {
-                        hand.phase = GamePhase::Settling;
-                    } else {
-                        // Extend deadline to let remaining players finish
-                        hand.phase_deadline = get_block_timestamp() + 30;
-                    }
+                    hand.phase = GamePhase::Settling;
                 },
                 GamePhase::BettingPreflop
                 | GamePhase::BettingFlop

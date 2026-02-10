@@ -67,9 +67,9 @@ pub mod dealing_system {
             };
             assert(seat_idx != 255, 'player not at table');
 
-            // Check the player hasn't folded
+            // A-05 FIX: Do NOT check has_folded here. In n-of-n aggregate-key ElGamal,
+            // even folded players must submit reveal tokens for other players' decryption.
             let caller_ph: PlayerHand = world.read_model((hand_id, seat_idx));
-            assert(!caller_ph.has_folded, 'player has folded');
 
             // Check token hasn't been submitted already
             let existing: RevealToken = world.read_model((hand_id, card_position, seat_idx));
@@ -86,6 +86,15 @@ pub mod dealing_system {
             // Layout: [generator_x, generator_y, pub_key_x, pub_key_y, c1_x, c1_y, token_x, token_y]
             let public_inputs = result.unwrap();
             assert(public_inputs.len() >= 8, 'insufficient proof inputs');
+
+            // A-03 FIX: Assert proof's generator matches canonical Grumpkin generator.
+            use crate::utils::constants::{GEN_X, GEN_Y};
+            assert(
+                *public_inputs.at(0) == GEN_X.into(), 'proof: wrong generator x',
+            );
+            assert(
+                *public_inputs.at(1) == GEN_Y.into(), 'proof: wrong generator y',
+            );
 
             // Verify public key matches submitter's stored key
             assert(
@@ -267,16 +276,16 @@ pub mod dealing_system {
     }
 
     /// Determine how many reveal tokens are needed for a card position.
-    /// Uses active (non-folded) player count instead of original num_players
-    /// so the game doesn't get stuck when a player folds.
+    /// A-05 FIX: Uses num_players (all original hand participants) instead of
+    /// active_players. In n-of-n aggregate-key ElGamal, ALL players' tokens
+    /// are needed for decryption regardless of fold status.
     fn get_required_tokens_for_position(
         ref world: dojo::world::WorldStorage,
         hand_id: u64,
         card_position: u8,
-        _num_players: u8,
-        max_players: u8,
+        num_players: u8,
+        _max_players: u8,
     ) -> u8 {
-        let active = count_active_players(ref world, hand_id, max_players);
         let comm: CommunityCards = world.read_model(hand_id);
 
         // Check if this is a community card position
@@ -285,11 +294,11 @@ pub mod dealing_system {
             || card_position == comm.flop_3_pos
             || card_position == comm.turn_pos
             || card_position == comm.river_pos {
-            return active; // all active players must contribute
+            return num_players; // all players must contribute
         }
 
-        // It's a hole card — need (active - 1) tokens (everyone except the owner)
-        if active > 0 { active - 1 } else { 0 }
+        // It's a hole card — need (num_players - 1) tokens (everyone except the owner)
+        if num_players > 0 { num_players - 1 } else { 0 }
     }
 
     fn count_tokens_for_position(
@@ -308,6 +317,7 @@ pub mod dealing_system {
     }
 
     /// Check if all cards for the current dealing phase have received enough tokens.
+    /// A-05 FIX: Uses num_players for token thresholds (n-of-n ElGamal).
     fn check_phase_complete(
         ref world: dojo::world::WorldStorage,
         hand_id: u64,
@@ -317,24 +327,23 @@ pub mod dealing_system {
     ) -> bool {
         let comm: CommunityCards = world.read_model(hand_id);
 
-        let active = count_active_players(ref world, hand_id, max_players);
+        let required_hole = if num_players > 0 { num_players - 1 } else { 0 };
 
         match phase {
             GamePhase::DealingPreflop => {
-                // Only check non-folded players' hole cards
+                // Check ALL players' hole cards (including folded — they still need tokens)
                 let mut j: u8 = 0;
                 let mut all_done = true;
-                let required = if active > 0 { active - 1 } else { 0 };
                 while j < max_players {
                     let ph: PlayerHand = world.read_model((hand_id, j));
-                    if ph.player != 0.try_into().unwrap() && !ph.has_folded {
+                    if ph.player != 0.try_into().unwrap() {
                         let t1 = count_tokens_for_position(
                             ref world, hand_id, ph.hole_card_1_pos, max_players,
                         );
                         let t2 = count_tokens_for_position(
                             ref world, hand_id, ph.hole_card_2_pos, max_players,
                         );
-                        if t1 < required || t2 < required {
+                        if t1 < required_hole || t2 < required_hole {
                             all_done = false;
                             break;
                         }
@@ -353,19 +362,19 @@ pub mod dealing_system {
                 let t3 = count_tokens_for_position(
                     ref world, hand_id, comm.flop_3_pos, max_players,
                 );
-                t1 >= active && t2 >= active && t3 >= active
+                t1 >= num_players && t2 >= num_players && t3 >= num_players
             },
             GamePhase::DealingTurn => {
                 let t = count_tokens_for_position(
                     ref world, hand_id, comm.turn_pos, max_players,
                 );
-                t >= active
+                t >= num_players
             },
             GamePhase::DealingRiver => {
                 let t = count_tokens_for_position(
                     ref world, hand_id, comm.river_pos, max_players,
                 );
-                t >= active
+                t >= num_players
             },
             _ => false,
         }

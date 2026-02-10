@@ -56,31 +56,16 @@ fn main(
 
     // 1. Verify permutation is valid
     //
-    // Soundness argument (sum + product + range check):
-    //   - Range check: each perm[i] is constrained to [0, N-1] by `assert(perm[i] < N)`.
-    //   - Sum check: sum(perm) == N*(N-1)/2 ensures the total is correct.
-    //   - Product check: product(perm[i]+1) == N! ensures no duplicates.
-    //     With range-checked values in [1..52], the true product 52! ≈ 2^225 < 2^254
-    //     (BN254 field size), so no modular wrap-around occurs for a valid permutation.
-    //     A non-permutation with duplicates would need product(perm[i]+1) ≡ 52! (mod p)
-    //     with at least one repeated and one missing value. Since all values are in
-    //     [1..52] and 52! < p, the product can only equal 52! when the multiset is
-    //     exactly {1,2,...,52}. Combined with sum=1326, this is sound.
-    let expected_sum: u32 = N * (N - 1) / 2;
-    let mut actual_sum: u32 = 0;
+    // A-02 FIX: Use a seen-array approach instead of sum+product.
+    // The previous sum+product approach was unsound — counterexample:
+    // {0,0,8,9} replacing {0,1,2,14} has same sum=17 and product(+1)=90.
+    // The seen-array guarantees each index appears exactly once.
+    let mut seen: [bool; N] = [false; N];
     for i in 0..N {
-        assert(perm[i] < N);
-        actual_sum += perm[i];
+        assert(perm[i] < N, "perm index out of range");
+        assert(!seen[perm[i]], "duplicate in permutation");
+        seen[perm[i]] = true;
     }
-    assert(actual_sum == expected_sum);
-
-    let mut expected_factorial: Field = 1;
-    let mut actual_product: Field = 1;
-    for i in 0..N {
-        expected_factorial *= (i as Field + 1);
-        actual_product *= (perm[i] as Field + 1);
-    }
-    assert(actual_product == expected_factorial);
 
     // 2. Verify re-encryption for each card
     for i in 0..N {

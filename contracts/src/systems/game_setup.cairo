@@ -229,6 +229,9 @@ pub mod game_setup_system {
 
             // Store the public key
             let mut ph: PlayerHand = world.read_model((hand_id, seat_idx));
+            // A-09 NOTE: x==0 is safe as a sentinel because on Grumpkin (y^2 = x^3 - 17),
+            // x=0 requires y^2 = -17 which has no solution in the field.
+            // Therefore x=0 is provably never a valid public key coordinate.
             assert(ph.public_key_x == 0, 'key already submitted');
             ph.public_key_x = pk_x;
             ph.public_key_y = pk_y;
@@ -276,6 +279,7 @@ pub mod game_setup_system {
             assert(seat_idx != 255, 'player not at table');
 
             // Store this player's submitted aggregate key
+            // A-09 NOTE: Same x==0 sentinel safety as public_key_x (see above).
             let mut ph: PlayerHand = world.read_model((hand_id, seat_idx));
             assert(ph.submitted_agg_x == 0, 'agg key already submitted');
             ph.submitted_agg_x = agg_pk_x;

@@ -64,6 +64,17 @@ pub mod shuffle_system {
             let public_inputs = result.unwrap();
             assert(public_inputs.len() >= 420, 'insufficient proof inputs');
 
+            // A-03 FIX: Assert proof's generator matches canonical Grumpkin generator.
+            // Without this, a prover could satisfy circuit constraints under an
+            // arbitrary generator, producing a valid proof for an invalid shuffle.
+            use crate::utils::constants::{GEN_X, GEN_Y};
+            assert(
+                *public_inputs.at(0) == GEN_X.into(), 'proof: wrong generator x',
+            );
+            assert(
+                *public_inputs.at(1) == GEN_Y.into(), 'proof: wrong generator y',
+            );
+
             // Verify aggregate public key matches on-chain state
             assert(
                 *public_inputs.at(2) == hand.agg_pub_key_x.into(),
