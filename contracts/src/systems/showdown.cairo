@@ -308,10 +308,12 @@ pub mod showdown_system {
                     sum_idx += 1;
                 };
 
-                // N-01 FIX: Distribute rake proportionally with floor division,
-                // then assign remainder 1-by-1 to pots that still have capacity.
-                // Prevents underflow when remainder exceeds smallest pot.
-                let mut rake_remaining = total_rake;
+                // R-04 FIX: Cumulative rake targeting ensures exact conservation.
+                // Each pot's rake = cumulative_target - cumulative_so_far, capped
+                // at pot amount. The last pot naturally absorbs the remainder
+                // since cumulative_target converges to total_rake.
+                let mut running_sum: u128 = 0;
+                let mut cumulative_rake: u128 = 0;
 
                 while pot_idx < 10 {
                     let sp: SidePot = world.read_model((hand_id, pot_idx));
@@ -319,20 +321,17 @@ pub mod showdown_system {
                         break;
                     }
 
-                    let proportional = if total_pot_sum > 0 {
-                        total_rake * sp.amount / total_pot_sum
+                    running_sum += sp.amount;
+                    let target = if total_pot_sum > 0 {
+                        total_rake * running_sum / total_pot_sum
                     } else {
                         0
                     };
-                    // Cap at pot amount to avoid underflow
-                    let pot_rake = if proportional > sp.amount {
-                        sp.amount
-                    } else if proportional > rake_remaining {
-                        rake_remaining
-                    } else {
-                        proportional
-                    };
-                    rake_remaining -= pot_rake;
+                    let mut pot_rake = target - cumulative_rake;
+                    if pot_rake > sp.amount {
+                        pot_rake = sp.amount;
+                    }
+                    cumulative_rake += pot_rake;
                     let distributable = sp.amount - pot_rake;
 
                     // Find best hand among eligible players for this pot
