@@ -2,74 +2,67 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { init, ToriiQueryBuilder, KeysClause } from "@dojoengine/sdk";
-import { AccountInterface, CallData } from "starknet";
+import { CallData } from "starknet";
 import type { TableData } from "@/lib/types";
 import { WORLD_ADDRESS, TORII_URL, NAMESPACE } from "@/lib/dojo-config";
+import { useStarknet } from "@/providers/StarknetProvider";
+import { getSystemAddress } from "@/lib/contracts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DojoSchema = any;
 
-// Mock tables for development fallback
-const MOCK_TABLES: TableData[] = [
-  {
-    tableId: 0,
-    creator: "0x1234",
-    maxPlayers: 6,
-    smallBlind: 5n,
-    bigBlind: 10n,
-    minBuyIn: 100n,
-    maxBuyIn: 1000n,
-    state: "Waiting",
-    currentHandId: 0,
-    dealerSeat: 0,
-    playerCount: 2,
-    rakeBps: 0,
-    rakeCap: 0n,
-    rakeRecipient: "0x0",
-    isPrivate: false,
-    inviteCodeHash: "0",
-    tokenAddress: "0x0",
-  },
-  {
-    tableId: 1,
-    creator: "0x5678",
-    maxPlayers: 6,
-    smallBlind: 10n,
-    bigBlind: 20n,
-    minBuyIn: 200n,
-    maxBuyIn: 2000n,
-    state: "InProgress",
-    currentHandId: 1,
-    dealerSeat: 2,
-    playerCount: 4,
-    rakeBps: 250,
-    rakeCap: 50n,
-    rakeRecipient: "0x0",
-    isPrivate: false,
-    inviteCodeHash: "0",
-    tokenAddress: "0x0",
-  },
-];
+const TABLE_MODEL = `${NAMESPACE}-Table`;
+
+function asNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string" && value.length > 0) return Number(value);
+  return fallback;
+}
+
+function asBigInt(value: unknown, fallback: bigint = 0n): bigint {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number") return BigInt(value);
+  if (typeof value === "string" && value.length > 0) return BigInt(value);
+  return fallback;
+}
+
+function asBool(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "bigint") return value !== 0n;
+  if (typeof value === "string") return value === "true" || value === "1";
+  return false;
+}
+
+function asEnum(value: unknown, fallback: string): string {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value as Record<string, unknown>);
+    if (keys.length > 0) return keys[0];
+  }
+  return fallback;
+}
 
 function parseTable(models: Record<string, unknown>): TableData | null {
   const t = models[`${NAMESPACE}-Table`] as Record<string, unknown> | undefined;
   if (!t) return null;
   return {
-    tableId: Number(t.table_id),
+    tableId: asNumber(t.table_id),
     creator: String(t.creator ?? ""),
-    maxPlayers: Number(t.max_players),
-    smallBlind: BigInt(String(t.small_blind ?? "0")),
-    bigBlind: BigInt(String(t.big_blind ?? "0")),
-    minBuyIn: BigInt(String(t.min_buy_in ?? "0")),
-    maxBuyIn: BigInt(String(t.max_buy_in ?? "0")),
-    state: String(t.state ?? "Waiting"),
-    currentHandId: Number(t.current_hand_id),
-    dealerSeat: Number(t.dealer_seat),
-    playerCount: Number(t.player_count),
-    rakeBps: Number(t.rake_bps ?? 0),
-    rakeCap: BigInt(String(t.rake_cap ?? "0")),
+    maxPlayers: asNumber(t.max_players),
+    smallBlind: asBigInt(t.small_blind),
+    bigBlind: asBigInt(t.big_blind),
+    minBuyIn: asBigInt(t.min_buy_in),
+    maxBuyIn: asBigInt(t.max_buy_in),
+    state: asEnum(t.state, "Waiting"),
+    currentHandId: asNumber(t.current_hand_id),
+    dealerSeat: asNumber(t.dealer_seat),
+    playerCount: asNumber(t.player_count),
+    rakeBps: asNumber(t.rake_bps),
+    rakeCap: asBigInt(t.rake_cap),
     rakeRecipient: String(t.rake_recipient ?? "0x0"),
-    isPrivate: Boolean(t.is_private),
+    isPrivate: asBool(t.is_private),
     inviteCodeHash: String(t.invite_code_hash ?? "0"),
     tokenAddress: String(t.token_address ?? "0x0"),
   };
@@ -87,7 +80,6 @@ interface UseLobbyReturn {
       minBuyIn: bigint;
       maxBuyIn: bigint;
     },
-    account?: AccountInterface | null,
   ) => Promise<void>;
   refresh: () => void;
 }
@@ -96,12 +88,14 @@ export function useLobby(): UseLobbyReturn {
   const [tables, setTables] = useState<TableData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { account } = useStarknet();
   const sdkRef = useRef<Awaited<ReturnType<typeof init<DojoSchema>>> | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const subscriptionRef = useRef<any>(null);
 
   const loadTables = useCallback(async () => {
     try {
+      if (!WORLD_ADDRESS || WORLD_ADDRESS === "0x0") {
+        throw new Error("NEXT_PUBLIC_WORLD_ADDRESS is not configured.");
+      }
       if (!sdkRef.current) {
         sdkRef.current = await init<DojoSchema>({
           client: {
@@ -119,68 +113,35 @@ export function useLobby(): UseLobbyReturn {
       const sdk = sdkRef.current;
 
       // Fetch all tables
-      const res = await sdk.getEntities({
+      const entities = await sdk.getEntities({
         query: new ToriiQueryBuilder<DojoSchema>()
-          .withClause(KeysClause([`${NAMESPACE}-Table`], []).build())
-          .withLimit(50),
+          .withClause(KeysClause([TABLE_MODEL], []).build())
+          .withLimit(100),
       });
 
-      const items = res.getItems();
+      const items = entities.getItems();
       const parsed: TableData[] = [];
       for (const entity of items) {
         const models = entity.models?.[NAMESPACE] ?? {};
         const t = parseTable(models);
         if (t) parsed.push(t);
       }
+      parsed.sort((a, b) => a.tableId - b.tableId);
 
-      setTables(parsed.length > 0 ? parsed : MOCK_TABLES);
-      setLoading(false);
-
-      // Clean up previous subscription if any
-      if (subscriptionRef.current) {
-        try { subscriptionRef.current.cancel?.(); } catch { /* ignore */ }
-      }
-
-      // Subscribe to new table creations
-      subscriptionRef.current = await sdk.subscribeEntityQuery({
-        query: new ToriiQueryBuilder<DojoSchema>()
-          .withClause(KeysClause([`${NAMESPACE}-Table`], []).build()),
-        callback: ({ data }) => {
-          if (!data) return;
-          const entities = Array.isArray(data) ? data : [data];
-          for (const entity of entities) {
-            const models = entity.models?.[NAMESPACE] ?? {};
-            const t = parseTable(models);
-            if (t) {
-              setTables((prev) => {
-                const idx = prev.findIndex((x) => x.tableId === t.tableId);
-                if (idx >= 0) {
-                  const next = [...prev];
-                  next[idx] = t;
-                  return next;
-                }
-                return [...prev, t];
-              });
-            }
-          }
-        },
-      });
-    } catch (err) {
-      console.warn("Torii connection failed, using mock data:", err);
-      setTables(MOCK_TABLES);
+      setTables(parsed);
       setError(null);
+      setLoading(false);
+    } catch (err) {
+      setTables([]);
+      setError(err instanceof Error ? err.message : "Failed to load tables.");
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadTables();
-    return () => {
-      if (subscriptionRef.current) {
-        try { subscriptionRef.current.cancel?.(); } catch { /* ignore */ }
-        subscriptionRef.current = null;
-      }
-    };
+    const id = window.setInterval(loadTables, 3000);
+    return () => window.clearInterval(id);
   }, [loadTables]);
 
   const createTable = useCallback(
@@ -198,36 +159,51 @@ export function useLobby(): UseLobbyReturn {
         inviteCodeHash?: string;
         tokenAddress?: string;
       },
-      account?: AccountInterface | null,
     ) => {
-      const contractAddress = process.env.NEXT_PUBLIC_LOBBY_ADDRESS || "";
-      if (!account || !contractAddress) {
-        console.log("Create table (mock):", params);
-        return;
+      const contractAddress = getSystemAddress("lobby");
+      if (!account) {
+        throw new Error("Connect your wallet before creating a table.");
+      }
+      if (!contractAddress) {
+        throw new Error("Lobby system address is not configured.");
       }
       const shuffleVerifier = process.env.NEXT_PUBLIC_SHUFFLE_VERIFIER_ADDRESS || "0x0";
       const decryptVerifier = process.env.NEXT_PUBLIC_DECRYPT_VERIFIER_ADDRESS || "0x0";
-      await account.execute({
-        contractAddress,
-        entrypoint: "create_table",
-        calldata: CallData.compile([
-          String(params.maxPlayers),
-          String(params.smallBlind),
-          String(params.bigBlind),
-          String(params.minBuyIn),
-          String(params.maxBuyIn),
-          shuffleVerifier,
-          decryptVerifier,
-          String(params.rakeBps ?? 0),
-          String(params.rakeCap ?? 0),
-          params.rakeRecipient ?? "0x0",
-          params.isPrivate ? "1" : "0",
-          params.inviteCodeHash ?? "0",
-          params.tokenAddress ?? "0x0",
-        ]),
-      });
+      if (shuffleVerifier === "0x0" || decryptVerifier === "0x0") {
+        throw new Error(
+          "Missing verifier addresses. Set NEXT_PUBLIC_SHUFFLE_VERIFIER_ADDRESS and NEXT_PUBLIC_DECRYPT_VERIFIER_ADDRESS.",
+        );
+      }
+      try {
+        setError(null);
+        await account.execute({
+          contractAddress,
+          entrypoint: "create_table",
+          calldata: CallData.compile([
+            String(params.maxPlayers),
+            String(params.smallBlind),
+            String(params.bigBlind),
+            String(params.minBuyIn),
+            String(params.maxBuyIn),
+            shuffleVerifier,
+            decryptVerifier,
+            String(params.rakeBps ?? 0),
+            String(params.rakeCap ?? 0),
+            params.rakeRecipient ?? "0x0",
+            params.isPrivate ? "1" : "0",
+            params.inviteCodeHash ?? "0",
+            params.tokenAddress ?? "0x0",
+          ]),
+        });
+        await loadTables();
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to create table.";
+        setError(message);
+        throw new Error(message);
+      }
     },
-    [],
+    [account, loadTables],
   );
 
   return { tables, loading, error, createTable, refresh: loadTables };

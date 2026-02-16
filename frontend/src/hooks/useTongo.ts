@@ -30,10 +30,9 @@ export function useTongo(tokenAddress?: string): UseTongoReturn {
       if (!tokenAddress) return;
       setLoading(true);
       try {
-        console.log(`[Tongo] Fund: ${amount} tokens into confidential balance`);
-        // const operation = tongoAccount.fund({ amount });
-        // const call = operation.toCalldata();
-        // await signer.execute(call);
+        throw new Error(
+          "Tongo integration is not enabled in this build. Use standard on-chain chip balances.",
+        );
       } finally {
         setLoading(false);
       }
@@ -46,10 +45,9 @@ export function useTongo(tokenAddress?: string): UseTongoReturn {
       if (!tokenAddress) return;
       setLoading(true);
       try {
-        console.log(`[Tongo] Withdraw: ${amount} tokens from confidential balance`);
-        // const operation = tongoAccount.withdraw({ amount });
-        // const call = operation.toCalldata();
-        // await signer.execute(call);
+        throw new Error(
+          "Tongo integration is not enabled in this build. Use standard on-chain chip balances.",
+        );
       } finally {
         setLoading(false);
       }
@@ -62,15 +60,11 @@ export function useTongo(tokenAddress?: string): UseTongoReturn {
       if (!tokenAddress) return;
       setLoading(true);
       try {
-        console.log(
-          `[Tongo] Transfer: ${amount} tokens to ${recipient} (confidential)`,
+        void recipient;
+        void amount;
+        throw new Error(
+          "Tongo integration is not enabled in this build. Use standard on-chain chip balances.",
         );
-        // const operation = tongoAccount.transfer({
-        //   recipientPublicKey: recipient,
-        //   amount,
-        // });
-        // const call = operation.toCalldata();
-        // await signer.execute(call);
       } finally {
         setLoading(false);
       }
