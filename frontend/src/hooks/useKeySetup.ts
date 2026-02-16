@@ -8,6 +8,8 @@ import { hash } from "starknet";
 import { GamePhase } from "@/lib/constants";
 import type { HandData, PlayerHandData, SeatData } from "@/lib/types";
 
+const SESSION_STORAGE_PREFIX = "pokerstarks.session.v1";
+
 interface UseKeySetupOptions {
   hand: HandData | undefined;
   playerHands: PlayerHandData[];
@@ -26,6 +28,30 @@ interface UseKeySetupReturn {
   error: string | null;
 }
 
+function getSessionStorageKey(handId: number, address: string): string {
+  return `${SESSION_STORAGE_PREFIX}:${address.toLowerCase()}:${handId}`;
+}
+
+function persistSessionSecret(
+  handId: number,
+  address: string,
+  secretKey: bigint,
+) {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(getSessionStorageKey(handId, address), secretKey.toString());
+}
+
+function restoreSession(handId: number, address: string): MentalPokerSession | null {
+  if (typeof window === "undefined") return null;
+  const raw = sessionStorage.getItem(getSessionStorageKey(handId, address));
+  if (!raw) return null;
+  try {
+    return MentalPokerSession.fromSecretKey(BigInt(raw));
+  } catch {
+    return null;
+  }
+}
+
 export function useKeySetup({
   hand,
   playerHands,
@@ -37,17 +63,44 @@ export function useKeySetup({
   submitInitialDeck,
 }: UseKeySetupOptions): UseKeySetupReturn {
   const sessionRef = useRef<MentalPokerSession | null>(null);
+  const [sessionState, setSessionState] = useState<MentalPokerSession | null>(null);
   const [keySubmitted, setKeySubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submittedHandRef = useRef<number>(0);
   const aggKeySubmittedRef = useRef<number>(0);
   const deckSubmittedRef = useRef<number>(0);
+  const hydratedSessionRef = useRef<string>("");
 
   // Find my seat
   const mySeat = seats.find(
     (s) => s.player.toLowerCase() === myAddress?.toLowerCase()
   );
+
+  const setSession = useCallback((session: MentalPokerSession | null) => {
+    sessionRef.current = session;
+    setSessionState(session);
+  }, []);
+
+  // Rehydrate in-memory session from sessionStorage on hand change.
+  useEffect(() => {
+    if (!hand || !myAddress) return;
+    const hydrateKey = `${myAddress.toLowerCase()}:${hand.handId}`;
+    if (hydratedSessionRef.current === hydrateKey) return;
+    hydratedSessionRef.current = hydrateKey;
+
+    const restored = restoreSession(hand.handId, myAddress);
+    if (restored) {
+      setSession(restored);
+      setKeySubmitted(true);
+      setError(null);
+      return;
+    }
+
+    setSession(null);
+    setKeySubmitted(false);
+    setError(null);
+  }, [hand?.handId, myAddress, setSession]);
 
   // Auto-submit public key when Setup phase starts
   useEffect(() => {
@@ -58,19 +111,24 @@ export function useKeySetup({
     const myPh = playerHands.find(
       (ph) => ph.player.toLowerCase() === myAddress.toLowerCase()
     );
-    // If key already submitted on-chain, skip
-    if (myPh && myPh.holeCard1Id !== undefined) {
-      // Check if public key fields exist (they're stored as pk_x/pk_y)
-      // We can't easily check from PlayerHandData, so just guard with ref
+    // If key already exists on-chain, avoid resubmission.
+    if (myPh && myPh.publicKeyX && myPh.publicKeyX !== "0") {
+      submittedHandRef.current = hand.handId;
+      setKeySubmitted(true);
+      return;
     }
 
     const doSetup = async () => {
       setIsSubmitting(true);
       setError(null);
       try {
-        // Create new session for this hand (keypair auto-generated in constructor)
-        const session = new MentalPokerSession();
-        sessionRef.current = session;
+        // Reuse restored session if available; otherwise generate + persist.
+        let session = sessionRef.current;
+        if (!session) {
+          session = new MentalPokerSession();
+          setSession(session);
+          persistSessionSecret(hand.handId, myAddress, session.secretKey);
+        }
 
         submittedHandRef.current = hand.handId;
         await submitPublicKey(
@@ -88,7 +146,7 @@ export function useKeySetup({
     };
 
     doSetup();
-  }, [hand, mySeat, myAddress, playerHands, submitPublicKey]);
+  }, [hand, mySeat, myAddress, playerHands, submitPublicKey, setSession]);
 
   // Step 2: Submit aggregate key once all public keys are indexed
   useEffect(() => {
@@ -165,16 +223,8 @@ export function useKeySetup({
     });
   }, [hand, myAddress, submitInitialDeck]);
 
-  // Reset when hand changes
-  useEffect(() => {
-    if (hand && hand.handId !== submittedHandRef.current) {
-      setKeySubmitted(false);
-      setError(null);
-    }
-  }, [hand]);
-
   return {
-    session: sessionRef.current,
+    session: sessionState,
     keySubmitted,
     isSubmitting,
     error,

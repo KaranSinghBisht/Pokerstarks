@@ -15,6 +15,7 @@ import {
   FIELD_P,
   generateKeypair,
   computeAggregateKey,
+  scalarMul,
   elgamalEncrypt,
   computeRevealToken,
   decryptWithTokens,
@@ -49,10 +50,21 @@ export class MentalPokerSession {
   /** The current encrypted deck (updated after each shuffle) */
   private currentDeck: EncryptedCard[] = [];
 
-  constructor() {
-    const kp = generateKeypair();
-    this.secretKey = kp.secretKey;
-    this.publicKey = kp.publicKey;
+  constructor(secretKey?: bigint) {
+    if (secretKey !== undefined) {
+      // Normalize into [1, p-1] so persisted keys are always valid scalars.
+      const normalized = ((secretKey % (FIELD_P - 1n)) + (FIELD_P - 1n)) % (FIELD_P - 1n) + 1n;
+      this.secretKey = normalized;
+      this.publicKey = scalarMul(GENERATOR, normalized)!;
+    } else {
+      const kp = generateKeypair();
+      this.secretKey = kp.secretKey;
+      this.publicKey = kp.publicKey;
+    }
+  }
+
+  static fromSecretKey(secretKey: bigint): MentalPokerSession {
+    return new MentalPokerSession(secretKey);
   }
 
   // ───────────────────── Key Phase ─────────────────────
