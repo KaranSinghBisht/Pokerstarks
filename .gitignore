@@ -30,11 +30,24 @@ frontend/.env.local
 frontend/.env.production
 
 # IDE
-.vscode/
+.vscode/*
 .idea/
 *.swp
 *.swo
 *~
+
+# Cursor MCP (secrets live here)
+.cursor/mcp*.json
+!.cursor/mcp.json.example
+
+# VSCode MCP (secrets live here)
+.vscode/mcp.json
+
+# Claude Code project MCP (may contain auth headers)
+.mcp.json
+
+# Allow committing a VSCode MCP template if desired
+!.vscode/mcp.json.example
 
 # OS
 .DS_Store
@@ -42,6 +55,7 @@ Thumbs.db
 
 # Project
 memory.md
+logs/
 *.log
 
 # Environment
