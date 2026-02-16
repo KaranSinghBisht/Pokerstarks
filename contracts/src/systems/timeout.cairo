@@ -13,6 +13,7 @@ pub mod timeout_system {
     use crate::models::enums::GamePhase;
     use crate::models::card::CommunityCards;
     use crate::utils::constants::CARD_NOT_DEALT;
+    use crate::utils::side_pots::{create_side_pots, check_any_all_in};
 
     #[abi(embed_v0)]
     impl TimeoutImpl of ITimeout<ContractState> {
@@ -174,7 +175,7 @@ pub mod timeout_system {
                         };
 
                         if round_complete {
-                            hand.phase =
+                            let next_phase =
                                 match hand.phase {
                                     GamePhase::BettingPreflop => GamePhase::DealingFlop,
                                     GamePhase::BettingFlop => GamePhase::DealingTurn,
@@ -182,6 +183,16 @@ pub mod timeout_system {
                                     GamePhase::BettingRiver => GamePhase::Showdown,
                                     _ => hand.phase,
                                 };
+                            // F-05 FIX: create side pots before entering Showdown
+                            if next_phase == GamePhase::Showdown {
+                                let has_all_in = check_any_all_in(
+                                    ref world, hand_id, max,
+                                );
+                                if has_all_in {
+                                    create_side_pots(ref world, hand_id, max);
+                                }
+                            }
+                            hand.phase = next_phase;
                             hand.current_bet = 0;
                             let mut ri: u8 = 0;
                             while ri < max {
@@ -219,7 +230,8 @@ pub mod timeout_system {
                             let ph: PlayerHand = world.read_model((hand_id, i));
                             if ph.player != 0.try_into().unwrap()
                                 && !ph.has_folded
-                                && ph.hole_card_1_id == CARD_NOT_DEALT {
+                                && (ph.hole_card_1_id == CARD_NOT_DEALT
+                                    || ph.hole_card_2_id == CARD_NOT_DEALT) {
                                 let mut fold_ph: PlayerHand = world
                                     .read_model((hand_id, i));
                                 fold_ph.has_folded = true;
@@ -237,23 +249,64 @@ pub mod timeout_system {
                     }
                 },
                 GamePhase::Settling => {
-                    // Settling timeout: auto-distribute pot
-                    // Find the first non-folded player and give them the pot
+                    // F-02 FIX: proportional refund instead of first-seat-wins
                     if hand.pot > 0 {
-                        let mut i: u8 = 0;
-                        while i < max {
-                            let ph: PlayerHand = world.read_model((hand_id, i));
+                        let mut non_folded_count: u8 = 0;
+                        let mut total_nf_bet: u128 = 0;
+                        let mut ci: u8 = 0;
+                        while ci < max {
+                            let ph: PlayerHand = world.read_model((hand_id, ci));
                             if ph.player != 0.try_into().unwrap() && !ph.has_folded {
-                                let mut winner_seat: Seat = world
-                                    .read_model((hand.table_id, i));
-                                winner_seat.chips += hand.pot;
-                                world.write_model(@winner_seat);
-                                hand.pot = 0;
-                                break;
+                                non_folded_count += 1;
+                                total_nf_bet += ph.total_bet;
                             }
-                            i += 1;
+                            ci += 1;
                         };
+
+                        if non_folded_count == 1 {
+                            let mut i: u8 = 0;
+                            while i < max {
+                                let ph: PlayerHand = world.read_model((hand_id, i));
+                                if ph.player != 0.try_into().unwrap() && !ph.has_folded {
+                                    let mut seat: Seat = world
+                                        .read_model((hand.table_id, i));
+                                    seat.chips += hand.pot;
+                                    world.write_model(@seat);
+                                    break;
+                                }
+                                i += 1;
+                            };
+                        } else if non_folded_count > 1 && total_nf_bet > 0 {
+                            let pot = hand.pot;
+                            let mut distributed: u128 = 0;
+                            let mut first_idx: u8 = 255;
+                            let mut di: u8 = 0;
+                            while di < max {
+                                let ph: PlayerHand = world.read_model((hand_id, di));
+                                if ph.player != 0.try_into().unwrap() && !ph.has_folded {
+                                    if first_idx == 255 { first_idx = di; }
+                                    let share = pot * ph.total_bet / total_nf_bet;
+                                    let mut seat: Seat = world
+                                        .read_model((hand.table_id, di));
+                                    seat.chips += share;
+                                    world.write_model(@seat);
+                                    distributed += share;
+                                }
+                                di += 1;
+                            };
+                            if distributed < pot && first_idx != 255 {
+                                let mut rem_seat: Seat = world
+                                    .read_model((hand.table_id, first_idx));
+                                rem_seat.chips += pot - distributed;
+                                world.write_model(@rem_seat);
+                            }
+                        }
+                        hand.pot = 0;
                     }
+
+                    // R-02/R-03 FIX: Mark hand as fully finalized so start_hand guard passes.
+                    hand.phase = GamePhase::Setup;
+                    hand.keys_submitted = hand.num_players;
 
                     // Force reset: table goes back to Waiting
                     let mut tbl: Table = world.read_model(hand.table_id);
