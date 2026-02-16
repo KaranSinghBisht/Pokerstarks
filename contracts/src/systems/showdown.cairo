@@ -25,6 +25,7 @@ pub mod showdown_system {
     use crate::models::enums::GamePhase;
     use crate::utils::hand_evaluator::evaluate_best_hand;
     use crate::utils::constants::CARD_NOT_DEALT;
+    use crate::utils::side_pots::shl_u8;
 
     const ZERO_ADDR: felt252 = 0;
 
@@ -94,64 +95,77 @@ pub mod showdown_system {
                 j += 1;
             };
 
-            if vote_count == active_count {
-                // Majority vote: find the card_id with the most votes.
-                // In honest play all players agree. On disagreement, majority wins.
-                // Tally votes per card_id (max 52 distinct values).
-                let (majority_id, majority_count) = find_majority_vote(
-                    ref world, hand_id, card_position, table.max_players,
+            // R-01 FIX: Determine if this position is a community card or hole card.
+            // In mental poker, only the owner can decrypt their hole cards (they hold
+            // the secret key, others only have N-1 reveal tokens). So hole cards
+            // finalize with a single owner vote; community cards need all-player consensus.
+            let comm: CommunityCards = world.read_model(hand_id);
+            let is_community = card_position == comm.flop_1_pos
+                || card_position == comm.flop_2_pos
+                || card_position == comm.flop_3_pos
+                || card_position == comm.turn_pos
+                || card_position == comm.river_pos;
+
+            if !is_community {
+                // Hole card: verify the voter is the card owner
+                assert(
+                    ph.hole_card_1_pos == card_position
+                        || ph.hole_card_2_pos == card_position,
+                    'not card owner',
                 );
+            }
 
-                // Require strict majority (> 50%). For 2-player ties where
-                // both disagree, no majority exists — skip and let timeout resolve.
-                if majority_count * 2 <= active_count {
-                    return;
-                }
+            let required_votes: u8 = if is_community { active_count } else { 1 };
 
-                let first_card_id = majority_id;
-                let comm: CommunityCards = world.read_model(hand_id);
-
-                // Is this a community card position?
-                if card_position == comm.flop_1_pos {
-                    let mut c: CommunityCards = world.read_model(hand_id);
-                    c.flop_1 = first_card_id;
-                    world.write_model(@c);
-                } else if card_position == comm.flop_2_pos {
-                    let mut c: CommunityCards = world.read_model(hand_id);
-                    c.flop_2 = first_card_id;
-                    world.write_model(@c);
-                } else if card_position == comm.flop_3_pos {
-                    let mut c: CommunityCards = world.read_model(hand_id);
-                    c.flop_3 = first_card_id;
-                    world.write_model(@c);
-                } else if card_position == comm.turn_pos {
-                    let mut c: CommunityCards = world.read_model(hand_id);
-                    c.turn = first_card_id;
-                    world.write_model(@c);
-                } else if card_position == comm.river_pos {
-                    let mut c: CommunityCards = world.read_model(hand_id);
-                    c.river = first_card_id;
-                    world.write_model(@c);
+            if vote_count >= required_votes {
+                let first_card_id = if is_community {
+                    // Community: majority vote among all active players
+                    let (majority_id, majority_count) = find_majority_vote(
+                        ref world, hand_id, card_position, table.max_players,
+                    );
+                    if majority_count * 2 <= active_count {
+                        return;
+                    }
+                    majority_id
                 } else {
-                    // It's a hole card — find whose hole card position this is
-                    let mut k: u8 = 0;
-                    while k < table.max_players {
-                        let mut player_ph: PlayerHand = world.read_model((hand_id, k));
-                        if player_ph.player != ZERO_ADDR.try_into().unwrap() {
-                            if player_ph.hole_card_1_pos == card_position
-                                && player_ph.hole_card_1_id == CARD_NOT_DEALT {
-                                player_ph.hole_card_1_id = first_card_id;
-                                world.write_model(@player_ph);
-                                break;
-                            } else if player_ph.hole_card_2_pos == card_position
-                                && player_ph.hole_card_2_id == CARD_NOT_DEALT {
-                                player_ph.hole_card_2_id = first_card_id;
-                                world.write_model(@player_ph);
-                                break;
-                            }
-                        }
-                        k += 1;
-                    };
+                    // Hole card: owner's single vote is authoritative
+                    card_id
+                };
+
+                if is_community {
+                    if card_position == comm.flop_1_pos {
+                        let mut c: CommunityCards = world.read_model(hand_id);
+                        c.flop_1 = first_card_id;
+                        world.write_model(@c);
+                    } else if card_position == comm.flop_2_pos {
+                        let mut c: CommunityCards = world.read_model(hand_id);
+                        c.flop_2 = first_card_id;
+                        world.write_model(@c);
+                    } else if card_position == comm.flop_3_pos {
+                        let mut c: CommunityCards = world.read_model(hand_id);
+                        c.flop_3 = first_card_id;
+                        world.write_model(@c);
+                    } else if card_position == comm.turn_pos {
+                        let mut c: CommunityCards = world.read_model(hand_id);
+                        c.turn = first_card_id;
+                        world.write_model(@c);
+                    } else if card_position == comm.river_pos {
+                        let mut c: CommunityCards = world.read_model(hand_id);
+                        c.river = first_card_id;
+                        world.write_model(@c);
+                    }
+                } else {
+                    // Hole card: store on the owner's PlayerHand
+                    let mut owner_ph: PlayerHand = world.read_model((hand_id, seat_idx));
+                    if owner_ph.hole_card_1_pos == card_position
+                        && owner_ph.hole_card_1_id == CARD_NOT_DEALT {
+                        owner_ph.hole_card_1_id = first_card_id;
+                        world.write_model(@owner_ph);
+                    } else if owner_ph.hole_card_2_pos == card_position
+                        && owner_ph.hole_card_2_id == CARD_NOT_DEALT {
+                        owner_ph.hole_card_2_id = first_card_id;
+                        world.write_model(@owner_ph);
+                    }
                 }
             }
         }
@@ -294,19 +308,31 @@ pub mod showdown_system {
                     sum_idx += 1;
                 };
 
-                // Second pass: distribute each pot
+                // N-01 FIX: Distribute rake proportionally with floor division,
+                // then assign remainder 1-by-1 to pots that still have capacity.
+                // Prevents underflow when remainder exceeds smallest pot.
+                let mut rake_remaining = total_rake;
+
                 while pot_idx < 10 {
                     let sp: SidePot = world.read_model((hand_id, pot_idx));
                     if sp.amount == 0 {
                         break;
                     }
 
-                    // Proportional rake for this pot
-                    let pot_rake = if total_pot_sum > 0 {
+                    let proportional = if total_pot_sum > 0 {
                         total_rake * sp.amount / total_pot_sum
                     } else {
                         0
                     };
+                    // Cap at pot amount to avoid underflow
+                    let pot_rake = if proportional > sp.amount {
+                        sp.amount
+                    } else if proportional > rake_remaining {
+                        rake_remaining
+                    } else {
+                        proportional
+                    };
+                    rake_remaining -= pot_rake;
                     let distributable = sp.amount - pot_rake;
 
                     // Find best hand among eligible players for this pot
@@ -544,16 +570,6 @@ pub mod showdown_system {
         };
 
         (best_id, best_count)
-    }
-
-    fn shl_u8(val: u8, shift: u8) -> u8 {
-        if shift == 0 { return val; }
-        if shift == 1 { return val * 2; }
-        if shift == 2 { return val * 4; }
-        if shift == 3 { return val * 8; }
-        if shift == 4 { return val * 16; }
-        if shift == 5 { return val * 32; }
-        0 // shift >= 6 would overflow u8 for val=1
     }
 
     /// A-05 FIX: Use num_players (n-of-n) instead of active_players for token requirements.
