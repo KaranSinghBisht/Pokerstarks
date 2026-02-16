@@ -18,6 +18,7 @@
     "@noir-lang/noir_js": "^1.0.0-beta.16",
     "framer-motion": "^12.33.0",
     "next": "16.1.6",
+    "ogl": "^1.0.11",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "starknet": "^8.9.2"
