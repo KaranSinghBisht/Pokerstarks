@@ -23,4 +23,5 @@ pub mod utils {
     pub mod constants;
     pub mod card_mapping;
     pub mod hand_evaluator;
+    pub mod side_pots;
 }
