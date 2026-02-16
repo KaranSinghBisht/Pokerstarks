@@ -62,7 +62,7 @@ fn main(
     // 1. Verify permutation is valid
     //
     // A-02 FIX: Use a seen-array approach instead of sum+product.
-    // The previous sum+product approach was unsound — counterexample:
+    // The previous sum+product approach was unsound -- counterexample:
     // {0,0,8,9} replacing {0,1,2,14} has same sum=17 and product(+1)=90.
     // The seen-array guarantees each index appears exactly once.
     let mut seen: [bool; N] = [false; N];
