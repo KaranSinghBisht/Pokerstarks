@@ -115,6 +115,31 @@ export function useGameOrchestrator(tableId: number) {
     });
   }, [table, hand, seats, address, account, actions]);
 
+  // ─── Auto-trigger: enforceTimeout ─────────────────────────────
+  // If the current phase deadline has elapsed, leader seat enforces timeout.
+  const timeoutCalledRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!hand || !account || !address) return;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (nowSec <= hand.phaseDeadline) return;
+
+    const isSeated = seats.some(
+      (s) => s.isOccupied && s.player.toLowerCase() === address.toLowerCase(),
+    );
+    if (!isSeated) return;
+
+    const timeoutKey = `${hand.handId}-${hand.phase}-${hand.phaseDeadline}`;
+    if (timeoutCalledRef.current === timeoutKey) return;
+    timeoutCalledRef.current = timeoutKey;
+
+    actions.enforceTimeout(hand.handId).catch((err: unknown) => {
+      console.error("Auto enforce_timeout failed:", err);
+      timeoutCalledRef.current = "";
+    });
+  }, [hand, seats, address, account, actions]);
+
   // ─── Auto-trigger: computeWinner ──────────────────────────────
   // When phase is Showdown and all required cards have been revealed
   // (community cards + non-folded players' hole cards), call computeWinner.

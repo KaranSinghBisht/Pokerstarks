@@ -40,6 +40,7 @@ const DEALING_ADDRESS = getSystemAddress("dealing");
 const BETTING_ADDRESS = getSystemAddress("betting");
 const SHOWDOWN_ADDRESS = getSystemAddress("showdown");
 const SETTLE_ADDRESS = getSystemAddress("settle");
+const TIMEOUT_ADDRESS = getSystemAddress("timeout");
 const CHAT_ADDRESS = getSystemAddress("chat");
 type WalletSource = "injected" | "controller";
 
@@ -149,6 +150,15 @@ const SESSION_POLICIES: SessionPolicies = {
           [SETTLE_ADDRESS]: {
             methods: [
               { entrypoint: "distribute_pot" },
+            ],
+          },
+        }
+      : {}),
+    ...(TIMEOUT_ADDRESS
+      ? {
+          [TIMEOUT_ADDRESS]: {
+            methods: [
+              { entrypoint: "enforce_timeout" },
             ],
           },
         }

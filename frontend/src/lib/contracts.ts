@@ -6,6 +6,7 @@ export type SystemContract =
   | "betting"
   | "showdown"
   | "settle"
+  | "timeout"
   | "chat";
 
 // Local development fallbacks from contracts/manifest_dev.json.
@@ -18,6 +19,7 @@ const DEV_FALLBACK: Record<SystemContract, string> = {
   betting: "0xe5fc0f538ae646672a51b81df1674576850c177a31dfff6ed523384416e8aa",
   showdown: "0x67f16f003c4ec6373e846a243811b426ed335aca4650255ca91114ca420021",
   settle: "0x2608e1a285dbe68e8a1435f0beae53e1837e33111d98cd25ecf2bd104472fbe",
+  timeout: "0x3da83ea79bca6aee6953756fc98e445bfc5727c0d16f9633374a9c785016237",
   chat: "0x1c3fa28dc400a60080f713778749c778ed24f683df859f369c365f2ef9c2569",
 };
 
@@ -29,6 +31,7 @@ const ENV_VALUES: Record<SystemContract, string> = {
   betting: process.env.NEXT_PUBLIC_BETTING_ADDRESS || "",
   showdown: process.env.NEXT_PUBLIC_SHOWDOWN_ADDRESS || "",
   settle: process.env.NEXT_PUBLIC_SETTLE_ADDRESS || "",
+  timeout: process.env.NEXT_PUBLIC_TIMEOUT_ADDRESS || "",
   chat: process.env.NEXT_PUBLIC_CHAT_ADDRESS || "",
 };
 
@@ -42,6 +45,7 @@ export const SYSTEM_CONTRACTS: Record<SystemContract, string> = {
   betting: ENV_VALUES.betting || (allowFallback ? DEV_FALLBACK.betting : ""),
   showdown: ENV_VALUES.showdown || (allowFallback ? DEV_FALLBACK.showdown : ""),
   settle: ENV_VALUES.settle || (allowFallback ? DEV_FALLBACK.settle : ""),
+  timeout: ENV_VALUES.timeout || (allowFallback ? DEV_FALLBACK.timeout : ""),
   chat: ENV_VALUES.chat || (allowFallback ? DEV_FALLBACK.chat : ""),
 };
 

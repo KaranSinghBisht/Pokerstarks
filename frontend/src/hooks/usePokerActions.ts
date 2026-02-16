@@ -39,6 +39,7 @@ export function usePokerActions(
     dealing: getSystemAddress("dealing"),
     showdown: getSystemAddress("showdown"),
     settle: getSystemAddress("settle"),
+    timeout: getSystemAddress("timeout"),
   };
 
   const submitAction = useCallback(
@@ -226,6 +227,18 @@ export function usePokerActions(
     ]);
   }, [tableId, account, contracts.game_setup]);
 
+  const enforceTimeout = useCallback(
+    async (handId: number) => {
+      await executeCall(
+        account ?? null,
+        contracts.timeout,
+        "enforce_timeout",
+        [handId],
+      );
+    },
+    [account, contracts.timeout],
+  );
+
   return {
     submitAction,
     setReady,
@@ -242,5 +255,6 @@ export function usePokerActions(
     computeWinner,
     distributePot,
     startHand,
+    enforceTimeout,
   };
 }
