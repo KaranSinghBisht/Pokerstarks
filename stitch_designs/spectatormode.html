@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Spectator Mode | Retro Pixel Poker</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&amp;family=VT323&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"/>
+<script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#ff00ff", // Neon Magenta
+              "background-light": "#fefce8", // Creamy retro light
+              "background-dark": "#1a1a2e", // Deep space dark
+              secondary: "#00f2ff", // Neon Cyan
+              pokerGreen: "#2d5a27",
+            },
+            fontFamily: {
+              display: ["'Press Start 2P'", "cursive"],
+              mono: ["'VT323'", "monospace"],
+            },
+            borderRadius: {
+              DEFAULT: "0px", // Retro pixel aesthetic usually uses sharp corners or very specific small radius
+            },
+          },
+        },
+      };
+    </script>
+<style>.crt-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%,
+                rgba(0, 0, 0, 0.1) 50%
+            ),
+            linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 4px, 3px 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .pixel-border {
+            box-shadow: 
+                0 4px 0 -2px #000, 
+                0 -4px 0 -2px #000, 
+                4px 0 0 -2px #000, 
+                -4px 0 0 -2px #000,
+                0 0 0 2px #000;
+        }
+        .neon-glow {
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.6);
+        }
+        @keyframes flicker {
+            0% { opacity: 0.97; }
+            5% { opacity: 0.95; }
+            10% { opacity: 0.9; }
+            15% { opacity: 0.93; }
+            20% { opacity: 0.98; }
+            100% { opacity: 1; }
+        }
+        .flicker {
+            animation: flicker 0.15s infinite;
+        }
+        .poker-table {
+            background: radial-gradient(circle, #3e8e41 0%, #1a3d1c 100%);
+            border: 12px solid #5d4037;
+            border-radius: 200px;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-mono text-gray-900 dark:text-white overflow-hidden select-none">
+<div class="crt-overlay"></div>
+<main class="relative h-screen w-screen flex flex-col items-center justify-center p-8 overflow-hidden">
+<nav class="absolute top-0 left-0 w-full p-4 flex justify-between items-center z-50">
+<div class="flex items-center space-x-4">
+<div class="bg-black p-2 border-2 border-primary text-primary font-display text-[10px] flicker">
+                    ARCADE POKER v0.4.2
+                </div>
+<div class="text-white bg-black/50 px-3 py-1 border border-white/20">
+                    TABLE: <span class="text-secondary">NEON_VALLEY_01</span>
+</div>
+</div>
+<div class="flex items-center space-x-6">
+<div class="text-right">
+<p class="text-[10px] opacity-50 uppercase">Spectators</p>
+<p class="text-secondary font-display text-sm">12</p>
+</div>
+<button class="bg-gray-800 border-2 border-gray-600 p-2 hover:bg-gray-700">
+<span class="material-icons text-white">settings</span>
+</button>
+</div>
+</nav>
+<div class="relative w-full max-w-5xl aspect-[16/9] poker-table shadow-2xl flex items-center justify-center border-[8px] border-black/40">
+<div class="flex flex-col items-center text-center space-y-4">
+<div class="flex space-x-2">
+<div class="w-16 h-24 bg-white border-2 border-black rounded flex flex-col items-center justify-between p-2">
+<span class="text-red-600 font-bold self-start">A♥</span>
+<span class="material-icons text-red-600 text-3xl">favorite</span>
+<span class="text-red-600 font-bold self-end rotate-180">A♥</span>
+</div>
+<div class="w-16 h-24 bg-white border-2 border-black rounded flex flex-col items-center justify-between p-2">
+<span class="text-black font-bold self-start">K♠</span>
+<span class="material-icons text-black text-3xl">token</span>
+<span class="text-black font-bold self-end rotate-180">K♠</span>
+</div>
+<div class="w-16 h-24 bg-white border-2 border-black rounded flex flex-col items-center justify-between p-2">
+<span class="text-red-600 font-bold self-start">Q♦</span>
+<span class="material-icons text-red-600 text-3xl">diamond</span>
+<span class="text-red-600 font-bold self-end rotate-180">Q♦</span>
+</div>
+<div class="w-16 h-24 bg-gray-200/20 border-2 border-dashed border-white/30 rounded flex items-center justify-center">
+<span class="text-white/20 font-display text-[8px]">TURN</span>
+</div>
+<div class="w-16 h-24 bg-gray-200/20 border-2 border-dashed border-white/30 rounded flex items-center justify-center">
+<span class="text-white/20 font-display text-[8px]">RIVER</span>
+</div>
+</div>
+<div class="bg-black/40 px-6 py-2 rounded-full border border-white/10">
+<span class="text-white font-display text-xs">POT: </span>
+<span class="text-secondary font-display text-xs">2,450 ZK</span>
+</div>
+</div>
+<div class="absolute -top-8 left-1/4 -translate-x-1/2 flex flex-col items-center">
+<img alt="Player Avatar" class="w-16 h-16 border-4 border-black bg-white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbLdb6QoHlgVVgpf5rhS6QS_OixCm_RQymdbRglFIT0bd5hidm-f0UIRonwJRasnUCKQlHAZKqlDE_vZkGx7TL_USMWc7HSttO5m434WiYrJUeG55XnYfMoppBTgFMpJZD-e07zgmljvBwdfUUgtwYcjsnzFy8j1fnYNigGd6hw0baODBSdcbyvefzd5vObO5qc1mwv98X9c5Og5gejiKJ-8kgIE82trXF7eGdVthoQy2UbKcySbqEd_nsU_i0UtFc5oCsqydCzBc"/>
+<div class="bg-black text-white px-2 py-1 mt-1 border border-white/50 text-[10px]">Cyber_Punk</div>
+<div class="text-secondary text-xs mt-1">1,200 ZK</div>
+</div>
+<div class="absolute -top-8 left-3/4 -translate-x-1/2 flex flex-col items-center">
+<img alt="Player Avatar" class="w-16 h-16 border-4 border-black bg-white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBYD0u48-1XZ6vlgkZRcdcJz8by55_QfqB9GNI_NHOBX4u_Hjq_tKefYf6oAiLkzir821f820X5tlfkeDYSU08-ZI_IqM8WYRLcpcRZCtN1M3hesykf5Zmlpvn5_KyBQgFsPdGgyUubS5rMNb0cp4Wg-xe-eF8gisgGl5v8ekXyjqn8NxnCLSWogeQPSSujn6rj0m8cHOErqnCoDOK2Gfzo25huIsV4ZhKx1BcquRpvUC3t25pU1S6vmuKP48Vh-v8O3yj29KhGcbM"/>
+<div class="bg-black text-white px-2 py-1 mt-1 border border-white/50 text-[10px]">RetroQueen</div>
+<div class="text-secondary text-xs mt-1">4,500 ZK</div>
+</div>
+<div class="absolute top-1/2 -left-12 -translate-y-1/2 flex flex-col items-center">
+<div class="relative group">
+<div class="absolute -inset-1 bg-primary blur opacity-0 group-hover:opacity-50 transition duration-1000"></div>
+<img alt="Player Avatar" class="relative w-16 h-16 border-4 border-black bg-white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA9xEdL_E48TUdjaE7LgkXzKaopqGUzjkuvlXLVI0uUk4xeiC4VPhIFScpzZrei7l7N1e9cYI5JrhPr7f0RGewSuRtHwJww8gwHanxaCsyQtdlzFSzQNIobQQlIBtpMct2lLb-YzQov1nn5KMXlzDzEx7FdYbo2oRKN4Y9eiTUkQ7ob1c8hD6Ka0zHq5Bs-sWJZ6mCRHQRYznhGaMBF3nbMTmcvie-Lv6NzqPr0gbq-iujPVNJZnZkrJ577Cbhe3XQo2NV-Oq1UTq4"/>
+</div>
+<div class="bg-black text-white px-2 py-1 mt-1 border border-white/50 text-[10px]">ZkMaster</div>
+<div class="text-secondary text-xs mt-1">820 ZK</div>
+</div>
+<div class="absolute top-1/2 -right-12 -translate-y-1/2 flex flex-col items-center">
+<div class="w-16 h-16 border-4 border-dashed border-white/20 flex items-center justify-center bg-black/20 group cursor-pointer hover:bg-primary/20 transition-colors">
+<span class="material-icons text-white/20 group-hover:text-primary">person_add</span>
+</div>
+<div class="text-white/40 font-display text-[8px] mt-2">EMPTY SEAT</div>
+</div>
+<button class="absolute top-1/2 right-1/4 -translate-y-1/2 translate-x-1/2 bg-secondary text-black font-display text-sm px-6 py-4 pixel-border hover:translate-y-[-2px] active:translate-y-[2px] shadow-[4px_4px_0px_#000] z-20">
+                JOIN TABLE
+            </button>
+</div>
+<div class="absolute top-20 left-6 w-64 bg-black/80 border-2 border-white/20 p-4 font-mono text-xs">
+<div class="flex items-center justify-between mb-3 border-b border-white/20 pb-1">
+<span class="text-secondary font-display text-[8px]">ZK ENGINE</span>
+<span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+</div>
+<div class="space-y-2">
+<div class="flex items-center text-green-400">
+<span class="material-icons text-xs mr-2">check_circle</span>
+<span>Hand Masking Generated</span>
+</div>
+<div class="flex items-center text-green-400">
+<span class="material-icons text-xs mr-2">check_circle</span>
+<span>Shuffling Permutation 1..6</span>
+</div>
+<div class="flex items-center text-secondary animate-pulse">
+<span class="material-icons text-xs mr-2">sync</span>
+<span>Waiting for Verifier Node...</span>
+</div>
+<div class="text-white/30 pl-6">
+                    0x82f..91a committed
+                </div>
+</div>
+</div>
+<div class="absolute top-20 right-6 w-64 bg-black/80 border-2 border-white/20 p-4 font-mono text-xs">
+<div class="flex items-center justify-between mb-3 border-b border-white/20 pb-1 text-primary">
+<span class="font-display text-[8px]">TABLE STATS</span>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between">
+<span class="text-white/60">Avg Pot:</span>
+<span class="text-white">1,400 ZK</span>
+</div>
+<div class="flex justify-between">
+<span class="text-white/60">Hands/Hr:</span>
+<span class="text-white">42</span>
+</div>
+<div class="flex justify-between">
+<span class="text-white/60">VPIP:</span>
+<span class="text-white">31%</span>
+</div>
+</div>
+</div>
+<div class="absolute bottom-0 left-0 w-full flex flex-col items-center">
+<div class="w-full bg-primary py-4 flex items-center justify-center overflow-hidden relative">
+<div class="absolute inset-0 opacity-20 pointer-events-none" style="background: repeating-linear-gradient(45deg, transparent, transparent 10px, black 10px, black 20px);"></div>
+<div class="relative flex items-center space-x-12 animate-pulse">
+<span class="text-black font-display text-2xl tracking-widest italic">SPECTATING</span>
+<span class="material-icons text-black text-2xl">visibility</span>
+<span class="text-black font-display text-2xl tracking-widest italic">SPECTATING</span>
+<span class="material-icons text-black text-2xl">visibility</span>
+<span class="text-black font-display text-2xl tracking-widest italic">SPECTATING</span>
+</div>
+</div>
+<div class="w-full bg-black/90 p-3 flex justify-between items-center text-[10px] text-white/50 font-mono tracking-tighter">
+<div class="flex space-x-8">
+<span>BLOCK: #18294401</span>
+<span class="text-green-500">PING: 24MS</span>
+</div>
+<div class="flex space-x-4 uppercase">
+<a class="hover:text-primary transition-colors" href="#">How to play</a>
+<a class="hover:text-primary transition-colors" href="#">Provably Fair</a>
+<a class="hover:text-primary transition-colors" href="#">Exit Lobby</a>
+</div>
+</div>
+</div>
+<div class="absolute top-1/4 left-10 opacity-20 animate-bounce delay-75">
+<span class="material-icons text-primary text-6xl">blur_on</span>
+</div>
+<div class="absolute bottom-1/3 right-12 opacity-10 animate-pulse">
+<span class="material-icons text-secondary text-[120px]">casino</span>
+</div>
+</main>
+<style>
+        .coin-particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #ffd700;
+            top: -20px;
+            animation: fall linear infinite;
+        }
+        @keyframes fall {
+            to { transform: translateY(110vh) rotate(360deg); }
+        }
+    </style>
+<div class="fixed inset-0 pointer-events-none" id="coin-container"></div>
+<script>
+        // Simple background coin fall for that "Arcade" feel
+        const container = document.getElementById('coin-container');
+        for (let i = 0; i < 15; i++) {
+            const coin = document.createElement('div');
+            coin.className = 'coin-particle';
+            coin.style.left = Math.random() * 100 + 'vw';
+            coin.style.animationDuration = (Math.random() * 3 + 5) + 's';
+            coin.style.animationDelay = (Math.random() * 5) + 's';
+            coin.style.opacity = Math.random() * 0.3;
+            container.appendChild(coin);
+        }
+    </script>
+
+</body></html>
