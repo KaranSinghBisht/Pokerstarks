@@ -200,30 +200,40 @@ pub mod timeout_system {
                     }
                 },
                 GamePhase::Showdown => {
-                    // Fold ALL unrevealed players (not just current_turn_seat
-                    // which is stale from betting)
-                    let mut i: u8 = 0;
-                    while i < max {
-                        let ph: PlayerHand = world.read_model((hand_id, i));
-                        if ph.player != 0.try_into().unwrap()
-                            && !ph.has_folded
-                            && ph.hole_card_1_id == CARD_NOT_DEALT {
-                            // This player hasn't revealed — fold them
-                            let mut fold_ph: PlayerHand = world.read_model((hand_id, i));
-                            fold_ph.has_folded = true;
-                            world.write_model(@fold_ph);
-                            hand.active_players -= 1;
-                        }
-                        i += 1;
-                    };
+                    // If community cards are unresolved (disagreement or
+                    // missing), the hand can't proceed — abort to Settling.
+                    let comm: CommunityCards = world.read_model(hand_id);
+                    let community_resolved =
+                        comm.flop_1 != CARD_NOT_DEALT
+                        && comm.flop_2 != CARD_NOT_DEALT
+                        && comm.flop_3 != CARD_NOT_DEALT
+                        && comm.turn != CARD_NOT_DEALT
+                        && comm.river != CARD_NOT_DEALT;
 
-                    if hand.active_players <= 1 {
-                        // Last player standing wins
+                    if !community_resolved {
                         hand.phase = GamePhase::Settling;
                     } else {
-                        // Some players revealed, some didn't — proceed to
-                        // compute_winner with whoever revealed
-                        hand.phase_deadline = get_block_timestamp() + 30;
+                        // Fold players whose hole cards aren't revealed
+                        let mut i: u8 = 0;
+                        while i < max {
+                            let ph: PlayerHand = world.read_model((hand_id, i));
+                            if ph.player != 0.try_into().unwrap()
+                                && !ph.has_folded
+                                && ph.hole_card_1_id == CARD_NOT_DEALT {
+                                let mut fold_ph: PlayerHand = world
+                                    .read_model((hand_id, i));
+                                fold_ph.has_folded = true;
+                                world.write_model(@fold_ph);
+                                hand.active_players -= 1;
+                            }
+                            i += 1;
+                        };
+
+                        if hand.active_players <= 1 {
+                            hand.phase = GamePhase::Settling;
+                        } else {
+                            hand.phase_deadline = get_block_timestamp() + 30;
+                        }
                     }
                 },
                 GamePhase::Settling => {
