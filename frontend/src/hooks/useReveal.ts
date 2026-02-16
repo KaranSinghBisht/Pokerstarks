@@ -164,10 +164,11 @@ export function useReveal({
     if (!session || !myPlayerHand || !currentDeckData || !mySeat) return;
     if (myHoleCards !== null) return;
 
-    // Get our hole card positions from PlayerHand data
     const pos1 = myPlayerHand.holeCard1Pos;
     const pos2 = myPlayerHand.holeCard2Pos;
-    if (pos1 === 0 && pos2 === 0) return; // Not yet assigned
+    // Positions are valid if the PlayerHand has a non-zero player address.
+    // Don't use (pos === 0) as a sentinel — 0 is a valid deck position.
+    if (!myPlayerHand.player || myPlayerHand.player === "0x0") return;
 
     // A-05 FIX: Use numPlayers (all original hand participants) instead of active players.
     // In n-of-n aggregate-key ElGamal, ALL players' tokens are needed for decryption,
@@ -221,20 +222,19 @@ export function useReveal({
         // Collect all card positions that need consensus (community + non-folded hole cards)
         const positions: number[] = [];
 
-        // Community card positions
         if (communityCards) {
-          if (communityCards.flop1Pos) positions.push(communityCards.flop1Pos);
-          if (communityCards.flop2Pos) positions.push(communityCards.flop2Pos);
-          if (communityCards.flop3Pos) positions.push(communityCards.flop3Pos);
-          if (communityCards.turnPos) positions.push(communityCards.turnPos);
-          if (communityCards.riverPos) positions.push(communityCards.riverPos);
+          positions.push(
+            communityCards.flop1Pos,
+            communityCards.flop2Pos,
+            communityCards.flop3Pos,
+            communityCards.turnPos,
+            communityCards.riverPos,
+          );
         }
 
-        // All non-folded players' hole card positions
         for (const ph of playerHands) {
-          if (ph.hasFolded || ph.player === "") continue;
-          if (ph.holeCard1Pos) positions.push(ph.holeCard1Pos);
-          if (ph.holeCard2Pos) positions.push(ph.holeCard2Pos);
+          if (ph.hasFolded || ph.player === "" || ph.player === "0x0") continue;
+          positions.push(ph.holeCard1Pos, ph.holeCard2Pos);
         }
 
         // A-05 FIX: Use numPlayers (all original hand participants) for token requirements.
@@ -336,7 +336,6 @@ export function useReveal({
   };
 }
 
-/** Determine which card positions this player needs to submit reveal tokens for. */
 function getPositionsForPhase(
   phase: GamePhase,
   mySeatIndex: number,
@@ -346,19 +345,17 @@ function getPositionsForPhase(
   const positions: number[] = [];
 
   if (phase === GamePhase.DealingPreflop) {
-    // Submit tokens for all OTHER players' hole cards
     for (const ph of playerHands) {
       if (ph.seatIndex === mySeatIndex) continue;
-      if (ph.hasFolded || ph.player === "") continue;
-      if (ph.holeCard1Pos) positions.push(ph.holeCard1Pos);
-      if (ph.holeCard2Pos) positions.push(ph.holeCard2Pos);
+      if (ph.player === "" || ph.player === "0x0") continue;
+      positions.push(ph.holeCard1Pos, ph.holeCard2Pos);
     }
   } else if (phase === GamePhase.DealingFlop && communityCards) {
-    if (communityCards.flop1Pos) positions.push(communityCards.flop1Pos, communityCards.flop2Pos, communityCards.flop3Pos);
+    positions.push(communityCards.flop1Pos, communityCards.flop2Pos, communityCards.flop3Pos);
   } else if (phase === GamePhase.DealingTurn && communityCards) {
-    if (communityCards.turnPos) positions.push(communityCards.turnPos);
+    positions.push(communityCards.turnPos);
   } else if (phase === GamePhase.DealingRiver && communityCards) {
-    if (communityCards.riverPos) positions.push(communityCards.riverPos);
+    positions.push(communityCards.riverPos);
   }
 
   return positions;
