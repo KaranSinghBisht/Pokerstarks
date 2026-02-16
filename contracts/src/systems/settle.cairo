@@ -53,22 +53,66 @@ pub mod settle_system {
                     }
                 }
 
-                let mut i: u8 = 0;
-                while i < table.max_players {
-                    let ph: PlayerHand = world.read_model((hand_id, i));
+                // Count non-folded players to decide distribution strategy
+                let mut non_folded_count: u8 = 0;
+                let mut total_non_folded_bet: u128 = 0;
+                let mut ci: u8 = 0;
+                while ci < table.max_players {
+                    let ph: PlayerHand = world.read_model((hand_id, ci));
                     if ph.player != ZERO_ADDR.try_into().unwrap() && !ph.has_folded {
-                        let mut winner_seat: Seat = world.read_model((hand.table_id, i));
-                        winner_seat.chips += hand.pot;
-                        world.write_model(@winner_seat);
-                        break;
+                        non_folded_count += 1;
+                        total_non_folded_bet += ph.total_bet;
                     }
-                    i += 1;
+                    ci += 1;
+                };
+
+                if non_folded_count == 1 {
+                    // Fold-win: only one player left, they get the pot
+                    let mut i: u8 = 0;
+                    while i < table.max_players {
+                        let ph: PlayerHand = world.read_model((hand_id, i));
+                        if ph.player != ZERO_ADDR.try_into().unwrap() && !ph.has_folded {
+                            let mut seat: Seat = world.read_model((hand.table_id, i));
+                            seat.chips += hand.pot;
+                            world.write_model(@seat);
+                            break;
+                        }
+                        i += 1;
+                    };
+                } else if non_folded_count > 1 && total_non_folded_bet > 0 {
+                    // F-02 FIX: Multiple non-folded players without a resolved winner.
+                    // Refund proportionally based on each player's contribution.
+                    let pot = hand.pot;
+                    let mut distributed: u128 = 0;
+                    let mut first_seat_idx: u8 = 255;
+                    let mut di: u8 = 0;
+                    while di < table.max_players {
+                        let ph: PlayerHand = world.read_model((hand_id, di));
+                        if ph.player != ZERO_ADDR.try_into().unwrap() && !ph.has_folded {
+                            if first_seat_idx == 255 { first_seat_idx = di; }
+                            let share = pot * ph.total_bet / total_non_folded_bet;
+                            let mut seat: Seat = world.read_model((hand.table_id, di));
+                            seat.chips += share;
+                            world.write_model(@seat);
+                            distributed += share;
+                        }
+                        di += 1;
+                    };
+                    // Remainder from floor division goes to first non-folded seat
+                    if distributed < pot && first_seat_idx != 255 {
+                        let mut rem_seat: Seat = world
+                            .read_model((hand.table_id, first_seat_idx));
+                        rem_seat.chips += pot - distributed;
+                        world.write_model(@rem_seat);
+                    }
                 };
             }
 
-            // Reset hand state
+            // R-02 FIX: Mark hand as fully finalized so start_hand guard passes.
+            // keys_submitted = num_players signals "done" (vs partial setup).
             hand.pot = 0;
-            hand.phase = GamePhase::Setup; // back to waiting for next hand
+            hand.phase = GamePhase::Setup;
+            hand.keys_submitted = hand.num_players;
             world.write_model(@hand);
 
             // Reset player ready states for next hand
