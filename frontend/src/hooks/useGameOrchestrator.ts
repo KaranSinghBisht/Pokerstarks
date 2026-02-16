@@ -91,11 +91,14 @@ export function useGameOrchestrator(tableId: number) {
     if (!table || !address || !account) return;
     if (table.state !== "InProgress") return;
 
-    if (hand && hand.phase !== GamePhase.Setup && hand.phase !== GamePhase.Settling) return;
-    if (hand && hand.phase === GamePhase.Setup && hand.keysSubmitted > 0) return;
+    // Only trigger when previous hand is fully settled:
+    //   phase=Setup AND keysSubmitted=numPlayers (finalized sentinel).
+    // A freshly started hand has keysSubmitted=0, preventing re-trigger.
+    if (hand) {
+      if (hand.phase !== GamePhase.Setup) return;
+      if (hand.keysSubmitted !== hand.numPlayers) return;
+    }
 
-    // Only the first occupied seat triggers (deterministic leader election
-    // to avoid N players all racing to call start_hand).
     const sortedSeats = [...seats]
       .filter((s) => s.isOccupied && !s.isSittingOut)
       .sort((a, b) => a.seatIndex - b.seatIndex);
@@ -108,7 +111,7 @@ export function useGameOrchestrator(tableId: number) {
 
     actions.startHand().catch((err: unknown) => {
       console.error("Auto start_hand failed:", err);
-      startHandCalledRef.current = 0; // allow retry
+      startHandCalledRef.current = 0;
     });
   }, [table, hand, seats, address, account, actions]);
 
