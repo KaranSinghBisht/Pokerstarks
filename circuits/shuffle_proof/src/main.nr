@@ -2,6 +2,11 @@
 // Proves: player applied a valid permutation AND correctly re-encrypted each card
 // under the aggregate public key.
 //
+// Security assumption (F-05): the initial deck encryption uses deterministic
+// randomness derived from a public seed. Deck secrecy relies on at least one
+// honest shuffler introducing fresh secret randomness via re-encryption.
+// This is the standard mental poker security model.
+//
 // Private inputs: permutation, re-encryption randomness
 // Public inputs: generator, aggregate pubkey, input deck (C1,C2), output deck (C1,C2)
 
