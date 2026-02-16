@@ -67,6 +67,15 @@ pub mod dealing_system {
             };
             assert(seat_idx != 255, 'player not at table');
 
+            // A-10 FIX: For hole-card positions, owner cannot submit a reveal token
+            // for their own card. Required contributors are all OTHER players.
+            let hole_owner_seat = find_hole_card_owner_seat(
+                ref world, hand_id, card_position, table.max_players,
+            );
+            if hand.phase == GamePhase::DealingPreflop && hole_owner_seat != 255 {
+                assert(seat_idx != hole_owner_seat, 'owner cannot reveal own hole');
+            }
+
             // A-05 FIX: Do NOT check has_folded here. In n-of-n aggregate-key ElGamal,
             // even folded players must submit reveal tokens for other players' decryption.
             let caller_ph: PlayerHand = world.read_model((hand_id, seat_idx));
@@ -150,6 +159,16 @@ pub mod dealing_system {
             );
 
             if collected >= required_tokens {
+                // A-10 FIX: Count-only checks are insufficient for hole cards.
+                // Ensure every non-owner player has submitted before advancing.
+                if hand.phase == GamePhase::DealingPreflop && hole_owner_seat != 255 {
+                    if !has_all_non_owner_tokens(
+                        ref world, hand_id, card_position, hole_owner_seat, table.max_players,
+                    ) {
+                        return;
+                    }
+                }
+
                 // Check if ALL cards for this phase have enough tokens
                 let phase_complete = check_phase_complete(
                     ref world, hand_id, hand.phase, hand.num_players, table.max_players,
@@ -316,6 +335,52 @@ pub mod dealing_system {
         count
     }
 
+    fn find_hole_card_owner_seat(
+        ref world: dojo::world::WorldStorage, hand_id: u64, card_position: u8, max_players: u8,
+    ) -> u8 {
+        let comm: CommunityCards = world.read_model(hand_id);
+        let is_community = card_position == comm.flop_1_pos
+            || card_position == comm.flop_2_pos
+            || card_position == comm.flop_3_pos
+            || card_position == comm.turn_pos
+            || card_position == comm.river_pos;
+        if is_community {
+            return 255;
+        }
+
+        let mut i: u8 = 0;
+        while i < max_players {
+            let ph: PlayerHand = world.read_model((hand_id, i));
+            if ph.player != 0.try_into().unwrap()
+                && (ph.hole_card_1_pos == card_position || ph.hole_card_2_pos == card_position) {
+                return i;
+            }
+            i += 1;
+        };
+        255
+    }
+
+    fn has_all_non_owner_tokens(
+        ref world: dojo::world::WorldStorage,
+        hand_id: u64,
+        card_position: u8,
+        owner_seat: u8,
+        max_players: u8,
+    ) -> bool {
+        let mut i: u8 = 0;
+        while i < max_players {
+            let ph: PlayerHand = world.read_model((hand_id, i));
+            if ph.player != 0.try_into().unwrap() && i != owner_seat {
+                let token: RevealToken = world.read_model((hand_id, card_position, i));
+                if !token.proof_verified {
+                    return false;
+                }
+            }
+            i += 1;
+        };
+        true
+    }
+
     /// Check if all cards for the current dealing phase have received enough tokens.
     /// A-05 FIX: Uses num_players for token thresholds (n-of-n ElGamal).
     fn check_phase_complete(
@@ -327,8 +392,6 @@ pub mod dealing_system {
     ) -> bool {
         let comm: CommunityCards = world.read_model(hand_id);
 
-        let required_hole = if num_players > 0 { num_players - 1 } else { 0 };
-
         match phase {
             GamePhase::DealingPreflop => {
                 // Check ALL players' hole cards (including folded — they still need tokens)
@@ -337,13 +400,11 @@ pub mod dealing_system {
                 while j < max_players {
                     let ph: PlayerHand = world.read_model((hand_id, j));
                     if ph.player != 0.try_into().unwrap() {
-                        let t1 = count_tokens_for_position(
-                            ref world, hand_id, ph.hole_card_1_pos, max_players,
-                        );
-                        let t2 = count_tokens_for_position(
-                            ref world, hand_id, ph.hole_card_2_pos, max_players,
-                        );
-                        if t1 < required_hole || t2 < required_hole {
+                        if !has_all_non_owner_tokens(
+                            ref world, hand_id, ph.hole_card_1_pos, j, max_players,
+                        ) || !has_all_non_owner_tokens(
+                            ref world, hand_id, ph.hole_card_2_pos, j, max_players,
+                        ) {
                             all_done = false;
                             break;
                         }
