@@ -83,30 +83,32 @@ pub mod showdown_system {
             };
             world.write_model(@vote);
 
-            // Count votes and check consensus
             let active_count = count_active_players(ref world, hand_id, table.max_players);
             let mut vote_count: u8 = 0;
-            let mut all_agree = true;
-            let mut first_card_id: u8 = card_id;
             let mut j: u8 = 0;
             while j < table.max_players {
                 let v: CardDecryptionVote = world.read_model((hand_id, card_position, j));
                 if v.submitted {
                     vote_count += 1;
-                    if vote_count == 1 {
-                        first_card_id = v.card_id;
-                    } else if v.card_id != first_card_id {
-                        all_agree = false;
-                    }
                 }
                 j += 1;
             };
 
-            // When all active players have voted, resolve
             if vote_count == active_count {
-                assert(all_agree, 'card decryption disagreement');
+                // Majority vote: find the card_id with the most votes.
+                // In honest play all players agree. On disagreement, majority wins.
+                // Tally votes per card_id (max 52 distinct values).
+                let (majority_id, majority_count) = find_majority_vote(
+                    ref world, hand_id, card_position, table.max_players,
+                );
 
-                // Consensus reached — store the accepted card ID
+                // Require strict majority (> 50%). For 2-player ties where
+                // both disagree, no majority exists — skip and let timeout resolve.
+                if majority_count * 2 <= active_count {
+                    return;
+                }
+
+                let first_card_id = majority_id;
                 let comm: CommunityCards = world.read_model(hand_id);
 
                 // Is this a community card position?
@@ -497,7 +499,53 @@ pub mod showdown_system {
         count
     }
 
-    /// Bit shift left for u8 (1 << n)
+    /// Returns (card_id, vote_count) for the card_id with the most votes.
+    fn find_majority_vote(
+        ref world: dojo::world::WorldStorage,
+        hand_id: u64,
+        card_position: u8,
+        max_players: u8,
+    ) -> (u8, u8) {
+        // Collect submitted votes into parallel arrays (max 6 players)
+        let mut vote_ids: Array<u8> = array![];
+        let mut i: u8 = 0;
+        while i < max_players {
+            let v: CardDecryptionVote = world.read_model((hand_id, card_position, i));
+            if v.submitted {
+                vote_ids.append(v.card_id);
+            }
+            i += 1;
+        };
+
+        let n = vote_ids.len();
+        if n == 0 {
+            return (0, 0);
+        }
+
+        // Find the card_id with the highest count (brute force, N <= 6)
+        let mut best_id: u8 = *vote_ids.at(0);
+        let mut best_count: u8 = 0;
+        let mut vi: u32 = 0;
+        while vi < n {
+            let candidate = *vote_ids.at(vi);
+            let mut count: u8 = 0;
+            let mut vj: u32 = 0;
+            while vj < n {
+                if *vote_ids.at(vj) == candidate {
+                    count += 1;
+                }
+                vj += 1;
+            };
+            if count > best_count {
+                best_count = count;
+                best_id = candidate;
+            }
+            vi += 1;
+        };
+
+        (best_id, best_count)
+    }
+
     fn shl_u8(val: u8, shift: u8) -> u8 {
         if shift == 0 { return val; }
         if shift == 1 { return val * 2; }
