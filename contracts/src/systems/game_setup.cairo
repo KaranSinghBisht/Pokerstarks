@@ -38,20 +38,19 @@ pub mod game_setup_system {
             let mut table: Table = world.read_model(table_id);
             assert(table.state == TableState::InProgress, 'table not in progress');
 
-            // Guard against duplicate start_hand calls (race condition)
+            // Guard: only allow start_hand after previous hand is fully settled.
+            // settle.cairo sets hand.phase = Setup after distribution completes,
+            // so Settling is NOT allowed (distribute_pot hasn't run yet).
             if table.current_hand_id > 0 {
                 let existing_hand: Hand = world.read_model(table.current_hand_id);
                 assert(
-                    existing_hand.phase == GamePhase::Settling
-                        || existing_hand.phase == GamePhase::Setup,
-                    'hand already active',
+                    existing_hand.phase == GamePhase::Setup,
+                    'hand not settled',
                 );
-                if existing_hand.phase == GamePhase::Setup {
-                    assert(
-                        existing_hand.keys_submitted == existing_hand.num_players,
-                        'hand already started',
-                    );
-                }
+                assert(
+                    existing_hand.keys_submitted == existing_hand.num_players,
+                    'hand already started',
+                );
             }
 
             // Get next hand ID
