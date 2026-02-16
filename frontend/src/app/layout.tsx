@@ -1,17 +1,7 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import { StarknetProvider } from "@/providers/StarknetProvider";
+import BrandedTerminalBackground from "@/components/effects/BrandedTerminalBackground";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Pokerstarks — ZK Poker on Starknet",
@@ -25,10 +15,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <StarknetProvider>{children}</StarknetProvider>
+      <body className="antialiased">
+        <div className="relative min-h-screen bg-[#080b12]">
+          <div
+            className="pointer-events-none fixed inset-0 z-0 bg-cover bg-center bg-no-repeat"
+            style={{ backgroundImage: "url('/retro/backgrounds/bg-image.png')" }}
+          />
+          <BrandedTerminalBackground />
+          <div className="relative z-20 min-h-screen">
+            <StarknetProvider>{children}</StarknetProvider>
+          </div>
+        </div>
       </body>
     </html>
   );
