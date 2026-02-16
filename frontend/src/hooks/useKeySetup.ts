@@ -90,17 +90,16 @@ export function useKeySetup({
     doSetup();
   }, [hand, mySeat, myAddress, playerHands, submitPublicKey]);
 
-  // When all keys are submitted, compute aggregate key + submit initial deck
+  // Step 2: Submit aggregate key once all public keys are indexed
   useEffect(() => {
     if (!hand || !sessionRef.current || !myAddress) return;
     if (hand.phase !== GamePhase.Shuffling) return;
     if (aggKeySubmittedRef.current === hand.handId) return;
 
-    // Collect all public keys from playerHands
     const keys: Point[] = [];
     for (const ph of playerHands) {
       if (ph.player === "" || ph.player === "0x0") continue;
-      if (ph.publicKeyX && ph.publicKeyY) {
+      if (ph.publicKeyX && ph.publicKeyX !== "0") {
         keys.push({
           x: BigInt(ph.publicKeyX),
           y: BigInt(ph.publicKeyY),
@@ -108,46 +107,63 @@ export function useKeySetup({
       }
     }
 
-    // If we don't have all keys yet from the indexed data, skip
     if (keys.length < hand.numPlayers) return;
 
-    const doAggregateAndDeck = async () => {
-      try {
-        aggKeySubmittedRef.current = hand.handId;
-        const aggKey = computeAggregateKey(keys);
-        sessionRef.current!.setAggregateKey(keys);
+    aggKeySubmittedRef.current = hand.handId;
+    const aggKey = computeAggregateKey(keys);
+    sessionRef.current.setAggregateKey(keys);
 
-        // Submit aggregate key on-chain (consensus: all players must submit same key)
-        await submitAggregateKey(
-          hand.handId,
-          aggKey.x.toString(),
-          aggKey.y.toString(),
-        );
+    submitAggregateKey(
+      hand.handId,
+      aggKey.x.toString(),
+      aggKey.y.toString(),
+    ).catch((err: unknown) => {
+      console.error("Aggregate key submission failed:", err);
+      aggKeySubmittedRef.current = 0;
+    });
+  }, [hand, playerHands, myAddress, submitAggregateKey]);
 
-        // Generate initial deck using deterministic seed from contract
-        if (deckSubmittedRef.current !== hand.handId && hand.deckSeed) {
-          deckSubmittedRef.current = hand.handId;
-          const seed = BigInt(hand.deckSeed);
-          const deck = sessionRef.current!.generateInitialDeck(seed);
-          const serialized = serializeDeck(deck);
+  // Step 3: Submit deck hash once aggregate key consensus is reached
+  const deckHashSubmittedRef = useRef<number>(0);
+  useEffect(() => {
+    if (!hand || !sessionRef.current || !myAddress) return;
+    if (hand.phase !== GamePhase.Shuffling) return;
+    if (hand.aggPubKeyX === "0") return;
+    if (deckHashSubmittedRef.current === hand.handId) return;
+    if (!hand.deckSeed || hand.deckSeed === "0") return;
 
-          // Submit deck hash for consensus (all players verify independently)
-          // Must match contract's poseidon_hash_span(deck.span())
-          const deckHash = hash.computePoseidonHashOnElements(serialized);
-          await submitInitialDeckHash(hand.handId, deckHash);
+    deckHashSubmittedRef.current = hand.handId;
 
-          // Submit the full deck (only accepted after hash consensus)
-          await submitInitialDeck(hand.handId, serialized);
-        }
-      } catch (err) {
-        console.error("Aggregate key/deck submission failed:", err);
-        aggKeySubmittedRef.current = 0;
-        deckSubmittedRef.current = 0;
-      }
-    };
+    const seed = BigInt(hand.deckSeed);
+    const deck = sessionRef.current.generateInitialDeck(seed);
+    const serialized = serializeDeck(deck);
+    const deckHash = hash.computePoseidonHashOnElements(serialized);
 
-    doAggregateAndDeck();
-  }, [hand, playerHands, myAddress, submitAggregateKey, submitInitialDeckHash, submitInitialDeck]);
+    submitInitialDeckHash(hand.handId, deckHash).catch((err: unknown) => {
+      console.error("Deck hash submission failed:", err);
+      deckHashSubmittedRef.current = 0;
+    });
+  }, [hand, myAddress, submitInitialDeckHash]);
+
+  // Step 4: Submit full deck once hash consensus is reached
+  useEffect(() => {
+    if (!hand || !sessionRef.current || !myAddress) return;
+    if (hand.phase !== GamePhase.Shuffling) return;
+    if (hand.initialDeckHash === "0") return;
+    if (deckSubmittedRef.current === hand.handId) return;
+    if (!hand.deckSeed || hand.deckSeed === "0") return;
+
+    deckSubmittedRef.current = hand.handId;
+
+    const seed = BigInt(hand.deckSeed);
+    const deck = sessionRef.current.generateInitialDeck(seed);
+    const serialized = serializeDeck(deck);
+
+    submitInitialDeck(hand.handId, serialized).catch((err: unknown) => {
+      console.error("Initial deck submission failed:", err);
+      deckSubmittedRef.current = 0;
+    });
+  }, [hand, myAddress, submitInitialDeck]);
 
   // Reset when hand changes
   useEffect(() => {
