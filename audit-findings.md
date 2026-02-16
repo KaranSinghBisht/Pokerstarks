@@ -117,6 +117,9 @@ Recommendation (design-level)
   2. Commit to decrypted card points/ids earlier with a verifiable commitment scheme.
   3. Make the threat model explicit: if reveals are intentionally off-chain/honesty-based, document that as a non-security property.
 
+Resolution (mitigated)
+- Replaced direct card ID submission with a consensus-based `submit_card_decryption` system. All active players must independently compute and submit the decrypted card ID for each position. When all votes are collected, majority vote determines the accepted value (strict majority required — >50%). Reveal tokens with ZK proofs (F-02 fix) must exist for the position before voting is allowed. If no majority exists (e.g., 2-player disagreement), the card stays unresolved and the Showdown timeout handler aborts the hand. A single griefer submitting a wrong value is outvoted by honest players in 3+ player games.
+
 ---
 
 ### F-04: ERC20 `transfer()` return values are ignored
@@ -161,6 +164,9 @@ Recommendation
 - Avoid publishing an ElGamal encryption whose randomness is publicly computable.
 - If you need deterministic consensus, use commitments to randomness + later reveal, or require immediate first shuffle before exposing ciphertexts, or incorporate per-player secret contributions.
 
+Resolution (accepted risk)
+- This is the standard mental poker security model: deck secrecy relies on **at least one honest shuffler** introducing fresh secret randomness via re-encryption. Each player shuffles with a ZK proof and non-zero randomness (enforced by the circuit: `assert(r != 0)`). The initial deck with public randomness is never treated as confidential — it exists only as a deterministic starting point for the shuffle chain. The assumption is documented in `circuits/shuffle_proof/src/main.nr`.
+
 ---
 
 ### F-06: Shuffle permutation constraint is non-standard
@@ -183,6 +189,9 @@ Recommendation
 - Use a standard permutation argument (e.g., sorting + adjacency checks, or a dedicated permutation/range-check gadget).
 - If keeping current approach, document why it is considered sound for N=52 and the chosen field (and validate with adversarial tests).
 
+Resolution (A-02 fix)
+- Replaced sum+product check with a `seen` boolean array: each index is range-checked (`perm[i] < N`) and uniqueness is enforced via `assert(!seen[perm[i]])`. This is provably sound for all N. See `circuits/shuffle_proof/src/main.nr` lines 59-68.
+
 ---
 
 ### F-07: Card decoding uses x-coordinate only
@@ -201,6 +210,9 @@ Impact
 
 Recommendation
 - Use both coordinates (x,y) for reverse lookup, or enforce a canonical sign convention during encoding/decoding.
+
+Resolution (fixed)
+- Reverse lookup now uses both coordinates: key is `${point.x},${point.y}`. See `encoding.ts` lines 28-35.
 
 ## Threat Model Notes
 
