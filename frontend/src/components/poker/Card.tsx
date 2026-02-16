@@ -1,36 +1,42 @@
 "use client";
 
-import { cardIdToRank, cardIdToSuit, SUIT_COLORS } from "@/lib/constants";
+import { cardIdToRank, cardIdToSuit } from "@/lib/constants";
 
 interface CardProps {
   cardId: number; // 0-51, or 255 for face-down
   small?: boolean;
 }
 
+const SUIT_NAME: Record<string, string> = {
+  "♣": "clubs",
+  "♦": "diamonds",
+  "♥": "hearts",
+  "♠": "spades",
+};
+
+function cardImageSrc(cardId: number): string {
+  if (cardId === 255) return "/retro/cards/back/back_red.png";
+  const rank = cardIdToRank(cardId); // "2".."10","J","Q","K","A"
+  const suitGlyph = cardIdToSuit(cardId);
+  const suit = SUIT_NAME[suitGlyph] ?? "unknown";
+  return `/retro/cards/front/${suit}_${rank}.png`;
+}
+
 export default function Card({ cardId, small }: CardProps) {
-  const isFaceDown = cardId === 255;
-  const size = small ? "w-10 h-14 text-xs" : "w-14 h-20 text-sm";
-
-  if (isFaceDown) {
-    return (
-      <div
-        className={`${size} rounded-lg border-2 border-gray-600 bg-gradient-to-br from-blue-800 to-blue-950 flex items-center justify-center shadow-md`}
-      >
-        <div className="w-3/4 h-3/4 rounded border border-blue-600 bg-blue-900/50" />
-      </div>
-    );
-  }
-
-  const rank = cardIdToRank(cardId);
-  const suit = cardIdToSuit(cardId);
-  const color = SUIT_COLORS[suit] || "text-gray-900";
+  const size = small ? "h-14 w-10" : "h-20 w-14";
 
   return (
     <div
-      className={`${size} rounded-lg border border-gray-300 bg-white flex flex-col items-center justify-center shadow-md ${color} font-bold`}
+      className={`${size} overflow-hidden border-2 border-black bg-white pixel-border-sm`}
     >
-      <span className={small ? "text-xs" : "text-base"}>{rank}</span>
-      <span className={small ? "text-sm" : "text-lg"}>{suit}</span>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={cardImageSrc(cardId)}
+        alt={cardId === 255 ? "Card back" : `Card ${cardId}`}
+        className="h-full w-full object-cover"
+        loading="lazy"
+        draggable={false}
+      />
     </div>
   );
 }

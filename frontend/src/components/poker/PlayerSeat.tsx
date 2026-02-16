@@ -4,17 +4,22 @@ import Card from "./Card";
 import type { SeatData, PlayerHandData } from "@/lib/types";
 
 interface PlayerSeatProps {
+  seatIndex: number;
   seat: SeatData;
   playerHand?: PlayerHandData;
   isCurrentTurn: boolean;
   isDealer: boolean;
   isLocalPlayer: boolean;
   position: { top: string; left: string };
-  /** Decrypted hole card IDs from the local crypto layer (local player only) */
   localHoleCards?: [number, number] | null;
+  canJoin?: boolean;
+  onJoin?: () => void;
 }
 
+const BOT_EMOJIS = ["😎", "🤖", "👾", "🎲", "🕹️", "🃏"];
+
 export default function PlayerSeat({
+  seatIndex,
   seat,
   playerHand,
   isCurrentTurn,
@@ -22,54 +27,84 @@ export default function PlayerSeat({
   isLocalPlayer,
   position,
   localHoleCards,
+  canJoin,
+  onJoin,
 }: PlayerSeatProps) {
   if (!seat.isOccupied) {
     return (
       <div
-        className="absolute flex flex-col items-center gap-1"
-        style={{ top: position.top, left: position.left, transform: "translate(-50%, -50%)" }}
+        className="absolute flex flex-col items-center gap-2"
+        style={{
+          top: position.top,
+          left: position.left,
+          transform: "translate(-50%, -50%)",
+        }}
       >
-        <div className="w-20 h-20 rounded-full border-2 border-dashed border-gray-600 bg-gray-800/50 flex items-center justify-center">
-          <span className="text-gray-500 text-xs">Empty</span>
-        </div>
+        <button
+          onClick={canJoin ? onJoin : undefined}
+          disabled={!canJoin}
+          className={`flex h-14 w-14 items-center justify-center border-4 bg-black/35 pixel-border-sm ${
+            canJoin
+              ? "border-[var(--secondary)]/60 text-[var(--secondary)] transition-colors hover:bg-[var(--secondary)]/10"
+              : "border-white/20 text-white/30"
+          }`}
+        >
+          {canJoin ? "+" : "□"}
+        </button>
+        <span className="font-retro-display text-[8px] text-white/45">
+          {canJoin ? "JOIN" : "EMPTY"}
+        </span>
       </div>
     );
   }
 
-  const shortAddr = seat.player.slice(0, 6) + "..." + seat.player.slice(-4);
+  const shortAddr = `${seat.player.slice(0, 6)}...${seat.player.slice(-4)}`;
   const chips = Number(seat.chips);
 
   return (
     <div
       className="absolute flex flex-col items-center gap-1"
-      style={{ top: position.top, left: position.left, transform: "translate(-50%, -50%)" }}
+      style={{
+        top: position.top,
+        left: position.left,
+        transform: "translate(-50%, -50%)",
+      }}
     >
-      {/* Dealer button */}
       {isDealer && (
-        <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-yellow-400 text-black text-xs font-bold flex items-center justify-center z-10">
+        <div className="absolute -left-4 -top-4 flex h-6 w-6 items-center justify-center rounded-full border-2 border-black bg-white font-retro-display text-[8px] text-black">
           D
         </div>
       )}
 
-      {/* Player avatar/info */}
       <div
-        className={`w-20 h-20 rounded-full border-2 flex flex-col items-center justify-center transition-all ${
+        className={`flex h-14 w-14 items-center justify-center border-4 bg-slate-800 pixel-border-sm ${
           isCurrentTurn
-            ? "border-yellow-400 bg-gray-700 ring-2 ring-yellow-400/50"
+            ? "border-[var(--accent)] animate-pulse"
             : playerHand?.hasFolded
-              ? "border-gray-700 bg-gray-800/70 opacity-50"
-              : "border-gray-600 bg-gray-800"
+              ? "border-slate-700 grayscale opacity-70"
+              : isLocalPlayer
+                ? "border-[var(--secondary)]"
+                : "border-[var(--primary)]/50"
         }`}
       >
-        <span className="text-xs text-gray-300 truncate w-16 text-center">
-          {isLocalPlayer ? "You" : shortAddr}
-        </span>
-        <span className="text-sm font-bold text-amber-400">{chips}</span>
+        <span className="text-xl">{isLocalPlayer ? "🧠" : BOT_EMOJIS[seatIndex % BOT_EMOJIS.length]}</span>
       </div>
 
-      {/* Cards — use locally decrypted cards if available, else on-chain IDs (showdown) */}
+      <div className="bg-black px-3 py-1 text-center pixel-border-sm">
+        <span className="block font-retro-display text-[8px] text-white/85">
+          {isLocalPlayer ? "YOU" : shortAddr}
+        </span>
+        <span className="font-retro-display text-[9px] text-white">{chips}</span>
+      </div>
+
+      {isCurrentTurn && (
+        <div className="absolute -right-7 -top-6 rotate-12 bg-[var(--accent)] px-2 py-1 font-retro-display text-[7px] text-black pixel-border-sm">
+          THINKING...
+        </div>
+      )}
+
       {playerHand && !playerHand.hasFolded && (
-        <div className="flex gap-0.5 -mt-1">
+        <div className="mt-0.5 flex gap-0.5">
           <Card
             cardId={
               isLocalPlayer
@@ -89,23 +124,22 @@ export default function PlayerSeat({
         </div>
       )}
 
-      {/* Bet indicator */}
       {playerHand && playerHand.betThisRound > 0n && (
-        <div className="text-xs text-gray-300 bg-gray-700/80 px-2 py-0.5 rounded">
-          Bet: {Number(playerHand.betThisRound)}
+        <div className="bg-black/80 px-2 py-0.5 font-retro-display text-[8px] text-[var(--secondary)] pixel-border-sm">
+          BET {Number(playerHand.betThisRound)}
         </div>
       )}
 
-      {/* Status indicators */}
       {playerHand?.isAllIn && (
-        <div className="text-xs text-red-400 font-bold">ALL IN</div>
+        <div className="font-retro-display text-[8px] text-red-400">ALL IN</div>
       )}
       {playerHand?.hasFolded && (
-        <div className="text-xs text-gray-500">FOLDED</div>
+        <div className="font-retro-display text-[8px] text-slate-500">FOLDED</div>
       )}
       {seat.isReady && !playerHand && (
-        <div className="text-xs text-green-400">READY</div>
+        <div className="font-retro-display text-[8px] text-green-400">READY</div>
       )}
     </div>
   );
 }
+

@@ -12,14 +12,13 @@ import type {
 } from "@/lib/types";
 import { PlayerAction, GamePhase } from "@/lib/constants";
 
-// 6-seat oval layout positions (percentage-based)
 const SEAT_POSITIONS = [
-  { top: "85%", left: "50%" },  // seat 0: bottom center
-  { top: "65%", left: "10%" },  // seat 1: bottom left
-  { top: "20%", left: "10%" },  // seat 2: top left
-  { top: "5%", left: "50%" },   // seat 3: top center
-  { top: "20%", left: "90%" },  // seat 4: top right
-  { top: "65%", left: "90%" },  // seat 5: bottom right
+  { top: "90%", left: "50%" }, // seat 0
+  { top: "72%", left: "12%" }, // seat 1
+  { top: "20%", left: "15%" }, // seat 2
+  { top: "3%", left: "50%" }, // seat 3
+  { top: "20%", left: "85%" }, // seat 4
+  { top: "72%", left: "88%" }, // seat 5
 ];
 
 interface PokerTableProps {
@@ -32,11 +31,8 @@ interface PokerTableProps {
   onAction: (action: PlayerAction, amount: bigint) => void;
   onReady: () => void;
   onJoin: (seatIndex: number, buyIn: bigint) => void;
-  /** Decrypted hole cards from client-side crypto */
   myHoleCards?: [number, number] | null;
-  /** Whether the local player is generating a ZK proof */
   isProving?: boolean;
-  /** Proof generation progress 0-100 */
   provingProgress?: number;
 }
 
@@ -54,11 +50,9 @@ export default function PokerTable({
   isProving,
   provingProgress,
 }: PokerTableProps) {
-  const localSeat = seats.find(
-    (s) => s.isOccupied && s.player === localPlayerAddress
-  );
+  const localSeat = seats.find((s) => s.isOccupied && s.player === localPlayerAddress);
   const localPlayerHand = playerHands.find(
-    (ph) => localSeat && ph.seatIndex === localSeat.seatIndex
+    (ph) => localSeat && ph.seatIndex === localSeat.seatIndex,
   );
 
   const isBettingPhase =
@@ -68,112 +62,113 @@ export default function PokerTable({
     hand?.phase === GamePhase.BettingRiver;
 
   const isLocalPlayerTurn =
-    isBettingPhase && localSeat && hand?.currentTurnSeat === localSeat.seatIndex;
+    isBettingPhase && !!localSeat && hand?.currentTurnSeat === localSeat.seatIndex;
+  const allowJoinSeat = !!localPlayerAddress && !localSeat && table.state === "Waiting";
 
   return (
-    <div className="relative w-full max-w-4xl aspect-[16/10] mx-auto">
-      {/* Table felt */}
-      <div className="absolute inset-4 rounded-[50%] bg-gradient-to-br from-green-800 to-green-900 border-4 border-amber-800 shadow-2xl shadow-black/50">
-        {/* Inner rail */}
-        <div className="absolute inset-3 rounded-[50%] border-2 border-green-700/30" />
+    <div className="relative mx-auto w-full max-w-6xl pb-36">
+      <div className="relative aspect-[2/1] w-full border-4 border-black bg-[var(--felt-border)] p-4 pixel-border">
+        <div className="felt-gradient absolute inset-4 rounded-full border-[10px] border-[#5d4037] shadow-2xl shadow-black/50">
+          <div className="pointer-events-none absolute inset-2 rounded-full border-4 border-white/10" />
 
-        {/* Pot display */}
-        {hand && hand.pot > 0n && (
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 mt-8">
-            <div className="bg-black/40 px-4 py-2 rounded-full border border-amber-600/50">
-              <span className="text-amber-400 font-bold text-lg">
-                Pot: {Number(hand.pot)}
+          {hand && hand.pot > 0n && (
+            <div className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2">
+              <div className="border-2 border-[var(--accent)]/40 bg-black/45 px-4 py-2 font-retro-display text-[10px] text-[var(--accent)] pixel-border-sm">
+                POT: {Number(hand.pot)}
+              </div>
+            </div>
+          )}
+
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <CommunityCardsComponent cards={communityCards} phase={hand?.phase || ""} />
+          </div>
+
+          {hand && (
+            <div className="absolute left-1/2 top-3 -translate-x-1/2">
+              <span className="bg-black/70 px-3 py-1 font-retro-display text-[9px] uppercase text-slate-300 pixel-border-sm">
+                {hand.phase}
               </span>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Community cards */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -mt-4">
-          <CommunityCardsComponent
-            cards={communityCards}
-            phase={hand?.phase || ""}
-          />
-        </div>
-
-        {/* Phase indicator */}
-        {hand && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2">
-            <span className="text-xs text-gray-400 bg-black/30 px-3 py-1 rounded-full">
-              {hand.phase}
-            </span>
-          </div>
-        )}
-
-        {/* Shuffle/Dealing progress overlay */}
-        {hand && (hand.phase === GamePhase.Setup || hand.phase === GamePhase.Shuffling) && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="bg-black/80 rounded-xl p-6 text-center max-w-xs">
-              <h3 className="text-white font-bold text-lg mb-3">
-                {hand.phase === GamePhase.Setup ? "Key Setup" : "Shuffling Deck"}
-              </h3>
-              {hand.phase === GamePhase.Shuffling && (
-                <div className="mb-3">
-                  <div className="text-sm text-gray-400 mb-1">
-                    Player {hand.shuffleProgress + 1} of {hand.numPlayers}
-                  </div>
-                  <div className="bg-gray-700 rounded-full h-2 w-full">
-                    <div
-                      className="bg-blue-500 rounded-full h-2 transition-all duration-300"
-                      style={{ width: `${((hand.shuffleProgress) / hand.numPlayers) * 100}%` }}
-                    />
-                  </div>
+          {hand && (hand.phase === GamePhase.Setup || hand.phase === GamePhase.Shuffling) && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="max-w-xs border-l-4 border-[var(--secondary)] bg-black/75 p-5 pixel-border-sm">
+                <h3 className="mb-2 font-retro-display text-[10px] text-[var(--secondary)]">
+                  ZK ENGINE ACTIVE
+                </h3>
+                <div className="font-retro-display text-[9px] text-slate-300">
+                  {hand.phase === GamePhase.Setup ? "KEY SETUP" : "SHUFFLING DECK"}
                 </div>
-              )}
-              {hand.phase === GamePhase.Setup && (
-                <div className="text-sm text-gray-400">
-                  Keys: {hand.keysSubmitted} / {hand.numPlayers}
-                </div>
-              )}
-              {isProving && (
-                <div className="mt-3">
-                  <div className="text-sm text-blue-400 mb-1">
-                    Generating ZK proof...
+                {hand.phase === GamePhase.Shuffling && (
+                  <div className="mt-3">
+                    <div className="mb-1 flex justify-between font-retro-display text-[8px] text-slate-400">
+                      <span>
+                        PLAYER {hand.shuffleProgress + 1} OF {hand.numPlayers}
+                      </span>
+                      <span>
+                        {Math.round((hand.shuffleProgress / Math.max(1, hand.numPlayers)) * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-800">
+                      <div
+                        className="h-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]"
+                        style={{
+                          width: `${(hand.shuffleProgress / Math.max(1, hand.numPlayers)) * 100}%`,
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="bg-gray-700 rounded-full h-2 w-full">
-                    <div
-                      className="bg-blue-400 rounded-full h-2 transition-all duration-300"
-                      style={{ width: `${provingProgress || 0}%` }}
-                    />
+                )}
+                {hand.phase === GamePhase.Setup && (
+                  <div className="mt-3 font-retro-display text-[8px] text-slate-400">
+                    KEYS: {hand.keysSubmitted}/{hand.numPlayers}
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Dealing progress */}
-        {hand && (
-          hand.phase === GamePhase.DealingPreflop ||
-          hand.phase === GamePhase.DealingFlop ||
-          hand.phase === GamePhase.DealingTurn ||
-          hand.phase === GamePhase.DealingRiver
-        ) && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="bg-black/70 rounded-xl px-6 py-4 text-center">
-              <div className="text-white font-bold mb-1">Dealing Cards</div>
-              <div className="text-sm text-gray-400">
-                Submitting reveal tokens...
+                )}
+                {isProving && (
+                  <div className="mt-3">
+                    <div className="mb-1 font-retro-display text-[8px] text-[var(--secondary)]">
+                      GENERATING PROOF...
+                    </div>
+                    <div className="h-2 w-full bg-slate-800">
+                      <div
+                        className="h-full bg-[var(--secondary)] transition-all duration-300"
+                        style={{ width: `${provingProgress || 0}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-              {isProving && (
-                <div className="mt-2 bg-gray-700 rounded-full h-2 w-40">
-                  <div
-                    className="bg-green-400 rounded-full h-2 transition-all"
-                    style={{ width: `${provingProgress || 0}%` }}
-                  />
-                </div>
-              )}
             </div>
-          </div>
-        )}
+          )}
+
+          {hand &&
+            (hand.phase === GamePhase.DealingPreflop ||
+              hand.phase === GamePhase.DealingFlop ||
+              hand.phase === GamePhase.DealingTurn ||
+              hand.phase === GamePhase.DealingRiver) && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="bg-black/75 px-5 py-4 text-center pixel-border-sm">
+                  <div className="font-retro-display text-[10px] text-white">
+                    DEALING CARDS
+                  </div>
+                  <div className="mt-1 font-retro-display text-[8px] text-slate-400">
+                    SUBMITTING REVEAL TOKENS...
+                  </div>
+                  {isProving && (
+                    <div className="mt-2 h-2 w-44 bg-slate-800">
+                      <div
+                        className="h-full bg-green-400 transition-all"
+                        style={{ width: `${provingProgress || 0}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+        </div>
       </div>
 
-      {/* Player seats */}
       {Array.from({ length: table.maxPlayers }, (_, i) => {
         const seat = seats.find((s) => s.seatIndex === i) || {
           tableId: table.tableId,
@@ -189,20 +184,21 @@ export default function PokerTable({
         return (
           <PlayerSeat
             key={i}
+            seatIndex={i}
             seat={seat}
             playerHand={ph}
-            isCurrentTurn={hand?.currentTurnSeat === i && isBettingPhase}
+            isCurrentTurn={!!(hand?.currentTurnSeat === i && isBettingPhase)}
             isDealer={hand?.dealerSeat === i}
             isLocalPlayer={seat.player === localPlayerAddress}
             position={SEAT_POSITIONS[i]}
             localHoleCards={seat.player === localPlayerAddress ? myHoleCards : undefined}
+            canJoin={allowJoinSeat && !seat.isOccupied}
+            onJoin={() => onJoin(i, table.minBuyIn)}
           />
         );
       })}
 
-      {/* Controls below table */}
-      <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-full max-w-md">
-        {/* Betting controls */}
+      <div className="absolute bottom-0 left-0 right-0 z-20">
         {isLocalPlayerTurn && localSeat && (
           <BettingControls
             currentBet={hand?.currentBet || 0n}
@@ -214,23 +210,22 @@ export default function PokerTable({
           />
         )}
 
-        {/* Ready button (pre-game) */}
         {localSeat && !localSeat.isReady && table.state === "Waiting" && (
           <button
             onClick={onReady}
-            className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-lg transition-colors"
+            className="mx-auto block bg-green-600 px-10 py-3 font-retro-display text-xs text-white pixel-border transition-colors hover:bg-green-500"
           >
-            Ready
+            READY
           </button>
         )}
 
-        {/* Waiting indicator */}
         {localSeat?.isReady && table.state === "Waiting" && (
-          <div className="text-center text-gray-400 py-3">
-            Waiting for other players...
+          <div className="py-3 text-center font-retro-display text-[9px] text-slate-400">
+            WAITING FOR OTHER PLAYERS...
           </div>
         )}
       </div>
     </div>
   );
 }
+
