@@ -208,8 +208,7 @@ export function useReveal({
     }
   }, [session, myPlayerHand, currentDeckData, revealTokens, mySeat, playerHands, myHoleCards, hand]);
 
-  // Auto-submit card decryption votes during Showdown phase
-  // Each player decrypts all visible cards and submits the card_id for consensus
+   // Auto-submit card decryption votes during Showdown phase.
   const submittedDecryptionsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!hand || !session || !mySeat || !currentDeckData) return;
@@ -219,29 +218,33 @@ export function useReveal({
       try {
         session.loadDeck(currentDeckData);
 
-        // Collect all card positions that need consensus (community + non-folded hole cards)
-        const positions: number[] = [];
+        // Build position list: community cards + OWN hole cards only.
+        // Non-owners cannot decrypt other players' hole cards (missing owner's token).
+        const positions: Array<{ pos: number; isCommunity: boolean }> = [];
 
         if (communityCards) {
           positions.push(
-            communityCards.flop1Pos,
-            communityCards.flop2Pos,
-            communityCards.flop3Pos,
-            communityCards.turnPos,
-            communityCards.riverPos,
+            { pos: communityCards.flop1Pos, isCommunity: true },
+            { pos: communityCards.flop2Pos, isCommunity: true },
+            { pos: communityCards.flop3Pos, isCommunity: true },
+            { pos: communityCards.turnPos, isCommunity: true },
+            { pos: communityCards.riverPos, isCommunity: true },
           );
         }
 
-        for (const ph of playerHands) {
-          if (ph.hasFolded || ph.player === "" || ph.player === "0x0") continue;
-          positions.push(ph.holeCard1Pos, ph.holeCard2Pos);
+        // Only push own hole cards — the only ones we can correctly decrypt.
+        if (myPlayerHand && !myPlayerHand.hasFolded && myPlayerHand.player && myPlayerHand.player !== "0x0") {
+          positions.push(
+            { pos: myPlayerHand.holeCard1Pos, isCommunity: false },
+            { pos: myPlayerHand.holeCard2Pos, isCommunity: false },
+          );
         }
 
         // A-05 FIX: Use numPlayers (all original hand participants) for token requirements.
         // In n-of-n ElGamal, ALL players' tokens are needed regardless of fold status.
         const numPlayers = hand.numPlayers ?? 0;
 
-        for (const pos of positions) {
+        for (const { pos, isCommunity } of positions) {
           const key = `${hand.handId}-${pos}`;
           if (submittedDecryptionsRef.current.has(key)) continue;
 
@@ -250,24 +253,21 @@ export function useReveal({
             (t) => t.handId === hand.handId && t.cardPosition === pos && t.proofVerified,
           );
 
-          // Community cards need all players' tokens; hole cards need (all - 1)
-          const isCommunity =
-            communityCards &&
-            (pos === communityCards.flop1Pos ||
-              pos === communityCards.flop2Pos ||
-              pos === communityCards.flop3Pos ||
-              pos === communityCards.turnPos ||
-              pos === communityCards.riverPos);
+          // Community cards: N tokens on-chain (all players submitted during dealing)
+          // Own hole cards: N-1 tokens on-chain (everyone except owner submitted)
           const required = isCommunity ? numPlayers : (numPlayers > 0 ? numPlayers - 1 : 0);
 
           if (tokensForPos.length < required) continue;
 
-          // Decrypt the card
+          // Decrypt the card.
+          // Community: all N tokens are on-chain → includeOwnToken=false (would double-count)
+          // Own hole:  N-1 tokens on-chain → includeOwnToken=true (adds our own to make N)
+          const includeOwnToken = !isCommunity;
           const tokens = tokensForPos.map((t) => ({
             x: BigInt(t.tokenX),
             y: BigInt(t.tokenY),
           }));
-          const cardId = session.decryptCard(pos, tokens);
+          const cardId = session.decryptCard(pos, tokens, includeOwnToken);
           if (cardId < 0) continue;
 
           submittedDecryptionsRef.current.add(key);
@@ -279,7 +279,7 @@ export function useReveal({
     };
 
     doSubmitDecryptions();
-  }, [hand, session, mySeat, currentDeckData, playerHands, communityCards, revealTokens, submitCardDecryption]);
+  }, [hand, session, mySeat, myPlayerHand, currentDeckData, playerHands, communityCards, revealTokens, submitCardDecryption]);
 
   // Reset on new hand
   useEffect(() => {
