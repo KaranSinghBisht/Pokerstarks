@@ -120,6 +120,13 @@ frontend/                 # Next.js web application
 
 scripts/
   garaga-server.py        # Garaga calldata generation server
+  bot/                    # Headless AI poker bot (Node.js)
+    index.ts              # Main state machine + CLI
+    chain.ts              # Starknet.js contract interactions
+    state.ts              # Torii state polling (Dojo SDK)
+    prover.ts             # ZK proof generation (noir_js + bb.js)
+    strategy.ts           # Betting AI (passive / aggressive / random)
+    log.ts                # Colored console output
 
 dev.sh                    # One-command dev launcher
 ```
@@ -139,6 +146,41 @@ dev.sh                    # One-command dev launcher
 | **Settle** | Pot distribution with rake, proportional refunds, side pot support |
 | **Chat** | On-chain messaging — text, emotes, system messages |
 | **Timeout** | Deadline enforcement for player actions, auto-fold |
+
+---
+
+## AI Bot (Headless Player)
+
+A headless Node.js bot that plays as a second player — useful for demos and testing. Runs the full mental poker protocol without a browser: key generation, shuffle + re-encryption with ZK proofs, partial decryption with ZK proofs, and configurable betting.
+
+```bash
+# Setup (one-time)
+cd scripts/bot
+npm install
+
+# Run (after dev stack is up via ./dev.sh)
+npx tsx index.ts \
+  --table 1 \
+  --seat 1 \
+  --private-key 0x1800000000300000180000000000030000000000003006001800006600 \
+  --address 0x517ececd29116499f4a1b64b094da79ba08dfd54a3edaa316134c41f8160973 \
+  --strategy passive
+```
+
+The bot auto-reads the world address from `contracts/manifest_dev.json`. The above private key/address are Katana's second pre-funded account.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--table` | (required) | Table ID to join |
+| `--seat` | (required) | Seat index (0–5) |
+| `--private-key` | (required) | Katana account private key |
+| `--address` | (required) | Katana account address |
+| `--strategy` | `passive` | `passive` (check/call), `aggressive` (raises), `random` |
+| `--buy-in` | table minimum | Buy-in amount |
+| `--rpc-url` | `http://localhost:5050` | Starknet RPC |
+| `--torii-url` | `http://localhost:8080` | Torii indexer |
+| `--world` | from manifest | World contract address |
+| `--poll-ms` | `2000` | State polling interval (ms) |
 
 ---
 

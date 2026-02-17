@@ -1,0 +1,22 @@
+{
+  "name": "pokerstarks-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts",
+    "bot": "tsx index.ts"
+  },
+  "dependencies": {
+    "@aztec/bb.js": "^0.82.2",
+    "@dojoengine/core": "^1.8.8",
+    "@dojoengine/sdk": "^1.8.13",
+    "@dojoengine/torii-client": "^1.8.2",
+    "@noir-lang/noir_js": "^1.0.0-beta.16",
+    "starknet": "^8.9.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "@types/node": "^20"
+  }
+}
