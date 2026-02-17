@@ -25,6 +25,7 @@
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { createHash } from "crypto";
 import { hash } from "starknet";
 
 import { BotChain, loadSystemAddresses } from "./chain.js";
@@ -48,10 +49,8 @@ import {
   deserializeDeck,
 } from "../../frontend/src/lib/noir/shuffle.js";
 
-import {
-  computeRevealToken,
-  prepareDecryptProofInputs,
-} from "../../frontend/src/lib/noir/decrypt.js";
+const BN254_SCALAR_FIELD =
+  21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
 // ───────────────────── CLI Args ─────────────────────
 
@@ -148,7 +147,9 @@ class PokerBot {
   private chain: BotChain;
   private state: StateReader;
   private session: MentalPokerSession | null = null;
+  private sessionHandId = 0;
   private running = true;
+  private lastSeenHandId = 0;
 
   // Guards — prevent duplicate actions
   private keySubmittedHand = 0;
@@ -161,9 +162,8 @@ class PokerBot {
   private showdownSubmitted = new Set<string>();
   private computeWinnerHand = 0;
   private distributePotHand = 0;
-  private startHandGuard = 0;
-  private joined = false;
-  private readied = false;
+  private startHandGuard = "";
+  private timeoutGuard = "";
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -172,6 +172,47 @@ class PokerBot {
     );
     this.chain = new BotChain(config.rpcUrl, config.privateKey, config.address, systems);
     this.state = new StateReader(config.worldAddress, config.toriiUrl);
+  }
+
+  private deriveSessionSecret(handId: number): bigint {
+    const digest = createHash("sha256")
+      .update(`${this.config.privateKey}:${handId}:pokerstarks-bot-session`)
+      .digest("hex");
+    const raw = BigInt(`0x${digest}`);
+    return (raw % (BN254_SCALAR_FIELD - 1n)) + 1n;
+  }
+
+  private resetForNewHand(handId: number) {
+    this.lastSeenHandId = handId;
+    this.session = null;
+    this.sessionHandId = 0;
+    this.keySubmittedHand = 0;
+    this.aggKeySubmittedHand = 0;
+    this.deckHashSubmittedHand = 0;
+    this.deckSubmittedHand = 0;
+    this.shuffledHand = 0;
+    this.revealedPhases.clear();
+    this.bettingActedPhase = "";
+    this.showdownSubmitted.clear();
+    this.computeWinnerHand = 0;
+    this.distributePotHand = 0;
+    this.timeoutGuard = "";
+  }
+
+  private ensureSessionForHand(handId: number): MentalPokerSession {
+    if (this.session && this.sessionHandId === handId) {
+      return this.session;
+    }
+    const secret = this.deriveSessionSecret(handId);
+    this.session = MentalPokerSession.fromSecretKey(secret);
+    this.sessionHandId = handId;
+    return this.session;
+  }
+
+  private isAlreadySubmittedError(err: unknown): boolean {
+    const msg =
+      err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+    return msg.includes("already voted") || msg.includes("token already submitted");
   }
 
   async run() {
@@ -207,49 +248,76 @@ class PokerBot {
   private async tick(gs: GameState) {
     const { table, seats, hand } = gs;
     if (!table) return;
+    const mySeat = seats.find(
+      (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
+    );
 
-    // ─── Join & Ready ───
-    if (!this.joined) {
-      const alreadySeated = seats.some(
-        (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
+    // ─── Join ───
+    if (!mySeat) {
+      if (table.state !== "Waiting") return;
+      const buyIn = this.config.buyIn > 0n ? this.config.buyIn : table.minBuyIn;
+      log.action(
+        `Joining table ${this.config.tableId} at seat ${this.config.seatIndex} with ${buyIn} chips`,
       );
-      if (alreadySeated) {
-        this.joined = true;
-        log.info("Already seated at table.");
-      } else if (table.state === "Waiting") {
-        const buyIn = this.config.buyIn > 0n ? this.config.buyIn : table.minBuyIn;
-        log.action(`Joining table ${this.config.tableId} at seat ${this.config.seatIndex} with ${buyIn} chips`);
-        await this.chain.joinTable(this.config.tableId, buyIn, this.config.seatIndex);
-        this.joined = true;
-      }
+      await this.chain.joinTable(this.config.tableId, buyIn, this.config.seatIndex);
       return;
     }
 
-    if (!this.readied) {
-      const mySeat = seats.find(
-        (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
-      );
-      if (mySeat && !mySeat.isReady && table.state === "Waiting") {
-        log.action("Setting ready");
-        await this.chain.setReady(this.config.tableId);
-        this.readied = true;
-      } else if (mySeat?.isReady) {
-        this.readied = true;
-      }
+    if (mySeat.isSittingOut) {
       return;
     }
 
-    if (!hand) {
-      // Table is InProgress but no hand? Try starting one
-      if (table.state === "InProgress" && this.startHandGuard !== table.currentHandId) {
+    // ─── Ready for next hand ───
+    if (table.state === "Waiting" && !mySeat.isReady) {
+      log.action("Setting ready");
+      await this.chain.setReady(this.config.tableId);
+      return;
+    }
+
+    // ─── Start hand when table is in progress and previous hand is finalized ───
+    if (table.state === "InProgress") {
+      const canStart =
+        !hand ||
+        (hand.phase === Phase.Setup && hand.keysSubmitted === hand.numPlayers);
+
+      if (canStart) {
         const sorted = [...seats]
           .filter((s) => s.isOccupied && !s.isSittingOut)
           .sort((a, b) => a.seatIndex - b.seatIndex);
-        if (sorted.length >= 2 && sorted[0].player.toLowerCase() === this.config.address.toLowerCase()) {
-          this.startHandGuard = table.currentHandId;
-          log.action("Starting new hand");
-          await this.chain.startHand(this.config.tableId);
+
+        if (
+          sorted.length >= 2 &&
+          sorted[0].player.toLowerCase() === this.config.address.toLowerCase()
+        ) {
+          const startKey = `${table.currentHandId}-${hand?.phase ?? "none"}-${hand?.keysSubmitted ?? 0}`;
+          if (this.startHandGuard !== startKey) {
+            log.action("Starting new hand");
+            await this.chain.startHand(this.config.tableId);
+            this.startHandGuard = startKey;
+          }
         }
+        return;
+      }
+    }
+
+    if (!hand) return;
+
+    // New hand observed on-chain — reset per-hand execution guards.
+    if (hand.handId !== this.lastSeenHandId) {
+      this.resetForNewHand(hand.handId);
+    }
+
+    // Session is deterministic per (bot private key, hand id), so restart-safe.
+    this.ensureSessionForHand(hand.handId);
+
+    // ─── Timeout enforcement ───
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (table.state === "InProgress" && nowSec > hand.phaseDeadline) {
+      const timeoutKey = `${hand.handId}-${hand.phase}-${hand.phaseDeadline}`;
+      if (this.timeoutGuard !== timeoutKey) {
+        log.action("Enforcing timeout");
+        await this.chain.enforceTimeout(hand.handId);
+        this.timeoutGuard = timeoutKey;
       }
       return;
     }
@@ -277,31 +345,30 @@ class PokerBot {
     const hand = gs.hand!;
     if (this.keySubmittedHand === hand.handId) return;
 
-    this.session = new MentalPokerSession();
-    this.keySubmittedHand = hand.handId;
-    // Reset all guards for new hand
-    this.aggKeySubmittedHand = 0;
-    this.deckHashSubmittedHand = 0;
-    this.deckSubmittedHand = 0;
-    this.shuffledHand = 0;
-    this.revealedPhases.clear();
-    this.bettingActedPhase = "";
-    this.showdownSubmitted.clear();
-    this.computeWinnerHand = 0;
-    this.distributePotHand = 0;
+    const myPh = gs.playerHands.find(
+      (ph) => ph.player.toLowerCase() === this.config.address.toLowerCase(),
+    );
+    if (myPh && myPh.publicKeyX !== "0") {
+      this.keySubmittedHand = hand.handId;
+      return;
+    }
+
+    const session = this.ensureSessionForHand(hand.handId);
 
     log.phase(`Hand #${hand.handId} — Setup`);
     log.action("Submitting public key");
     await this.chain.submitPublicKey(
       hand.handId,
-      this.session.publicKey.x.toString(),
-      this.session.publicKey.y.toString(),
+      session.publicKey.x.toString(),
+      session.publicKey.y.toString(),
     );
+    this.keySubmittedHand = hand.handId;
   }
 
   // ─── Shuffling Phase ───
   private async handleShuffling(gs: GameState) {
     const hand = gs.hand!;
+    const session = this.ensureSessionForHand(hand.handId);
 
     // Step A: Submit aggregate key if needed
     if (this.aggKeySubmittedHand !== hand.handId && hand.aggPubKeyX === "0") {
@@ -312,43 +379,43 @@ class PokerBot {
         }
       }
       if (keys.length >= hand.numPlayers) {
-        this.aggKeySubmittedHand = hand.handId;
         const aggKey = computeAggregateKey(keys);
-        this.session!.setAggregateKey(keys);
+        session.setAggregateKey(keys);
         log.action("Submitting aggregate key");
         await this.chain.submitAggregateKey(hand.handId, aggKey.x.toString(), aggKey.y.toString());
+        this.aggKeySubmittedHand = hand.handId;
       }
       return;
     }
 
     // Ensure session has aggregate key set
-    if (this.session && !this.session.getAggregateKey() && hand.aggPubKeyX !== "0") {
+    if (!session.getAggregateKey() && hand.aggPubKeyX !== "0") {
       const keys: Point[] = gs.playerHands
         .filter((ph) => ph.publicKeyX && ph.publicKeyX !== "0")
         .map((ph) => ({ x: BigInt(ph.publicKeyX), y: BigInt(ph.publicKeyY) }));
-      if (keys.length > 0) this.session.setAggregateKey(keys);
+      if (keys.length > 0) session.setAggregateKey(keys);
     }
 
     // Step B: Submit deck hash
     if (this.deckHashSubmittedHand !== hand.handId && hand.aggPubKeyX !== "0" && hand.deckSeed && hand.deckSeed !== "0") {
-      this.deckHashSubmittedHand = hand.handId;
       const seed = BigInt(hand.deckSeed);
-      const deck = this.session!.generateInitialDeck(seed);
+      const deck = session.generateInitialDeck(seed);
       const serialized = serializeDeck(deck);
       const deckHash = hash.computePoseidonHashOnElements(serialized);
       log.action("Submitting deck hash");
       await this.chain.submitInitialDeckHash(hand.handId, deckHash);
+      this.deckHashSubmittedHand = hand.handId;
       return;
     }
 
     // Step C: Submit initial deck
     if (this.deckSubmittedHand !== hand.handId && hand.initialDeckHash && hand.initialDeckHash !== "0" && hand.deckSeed && hand.deckSeed !== "0") {
-      this.deckSubmittedHand = hand.handId;
       const seed = BigInt(hand.deckSeed);
-      const deck = this.session!.generateInitialDeck(seed);
+      const deck = session.generateInitialDeck(seed);
       const serialized = serializeDeck(deck);
       log.action("Submitting initial deck");
       await this.chain.submitInitialDeck(hand.handId, serialized);
+      this.deckSubmittedHand = hand.handId;
       return;
     }
 
@@ -364,17 +431,17 @@ class PokerBot {
     );
     if (myOccupiedIndex !== hand.shuffleProgress) return;
 
-    this.shuffledHand = hand.handId;
     log.phase("My turn to shuffle!");
 
     const inputDeck = deserializeDeck(gs.currentDeck.cards);
-    const { serializedDeck, proofInputs } = this.session!.shuffleDeck(inputDeck);
+    const { serializedDeck, proofInputs } = session.shuffleDeck(inputDeck);
 
     log.action("Generating shuffle proof...");
     const proof = await generateProof("shuffle", proofInputs);
 
     log.action("Submitting shuffled deck + proof");
     await this.chain.submitShuffle(hand.handId, serializedDeck, proof);
+    this.shuffledHand = hand.handId;
   }
 
   // ─── Dealing Phase ───
@@ -382,22 +449,31 @@ class PokerBot {
     const hand = gs.hand!;
     const phaseKey = `${hand.handId}-${hand.phase}`;
     if (this.revealedPhases.has(phaseKey)) return;
-    if (!gs.currentDeck?.cards?.length || !this.session) return;
+    if (!gs.currentDeck?.cards?.length) return;
 
     const mySeat = gs.seats.find(
       (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
     );
     if (!mySeat) return;
 
-    this.revealedPhases.add(phaseKey);
-    this.session.loadDeck(gs.currentDeck.cards);
+    const session = this.ensureSessionForHand(hand.handId);
+    session.loadDeck(gs.currentDeck.cards);
     log.phase(`Dealing — ${hand.phase}`);
 
     // Determine card positions to reveal
     const positions = this.getPositionsForPhase(hand.phase, mySeat.seatIndex, gs);
 
     for (const pos of positions) {
-      const { token, proofInputs } = this.session.computeRevealTokenForCard(pos);
+      const alreadySubmitted = gs.revealTokens.some(
+        (t) =>
+          t.handId === hand.handId &&
+          t.cardPosition === pos &&
+          t.playerSeat === mySeat.seatIndex &&
+          t.proofVerified,
+      );
+      if (alreadySubmitted) continue;
+
+      const { token, proofInputs } = session.computeRevealTokenForCard(pos);
 
       log.action(`Generating decrypt proof for card position ${pos}...`);
       const proof = await generateProof("decrypt", proofInputs);
@@ -410,6 +486,8 @@ class PokerBot {
         proof,
       );
     }
+
+    this.revealedPhases.add(phaseKey);
   }
 
   private getPositionsForPhase(phase: string, mySeatIndex: number, gs: GameState): number[] {
@@ -452,25 +530,26 @@ class PokerBot {
     );
     if (!myPH || myPH.hasFolded || myPH.isAllIn) return;
 
-    this.bettingActedPhase = phaseKey;
     log.phase(`Betting — ${hand.phase} (my turn)`);
 
     const decision = decideBettingAction(this.config.strategy, hand, myPH, mySeat);
     log.action(`Decision: ${decision.label}`);
     await this.chain.playerAction(hand.handId, decision.action, decision.amount);
+    this.bettingActedPhase = phaseKey;
   }
 
   // ─── Showdown Phase ───
   private async handleShowdown(gs: GameState) {
     const hand = gs.hand!;
-    if (!this.session || !gs.currentDeck?.cards?.length) return;
+    if (!gs.currentDeck?.cards?.length) return;
 
     const mySeat = gs.seats.find(
       (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
     );
     if (!mySeat) return;
 
-    this.session.loadDeck(gs.currentDeck.cards);
+    const session = this.ensureSessionForHand(hand.handId);
+    session.loadDeck(gs.currentDeck.cards);
 
     const myPH = gs.playerHands.find(
       (ph) => ph.player.toLowerCase() === this.config.address.toLowerCase(),
@@ -498,6 +577,17 @@ class PokerBot {
 
     for (const { pos, isCommunity } of positions) {
       const key = `${hand.handId}-${pos}`;
+      const alreadyVotedOnChain = gs.cardVotes.some(
+        (v) =>
+          v.handId === hand.handId &&
+          v.cardPosition === pos &&
+          v.voterSeat === mySeat.seatIndex &&
+          v.submitted,
+      );
+      if (alreadyVotedOnChain) {
+        this.showdownSubmitted.add(key);
+        continue;
+      }
       if (this.showdownSubmitted.has(key)) continue;
 
       const tokensForPos = gs.revealTokens.filter(
@@ -513,12 +603,16 @@ class PokerBot {
         y: BigInt(t.tokenY),
       }));
 
-      const cardId = this.session.decryptCard(pos, tokens, includeOwnToken);
+      const cardId = session.decryptCard(pos, tokens, includeOwnToken);
       if (cardId < 0) continue;
 
-      this.showdownSubmitted.add(key);
       log.action(`Decrypting card at position ${pos} → card #${cardId}`);
-      await this.chain.submitCardDecryption(hand.handId, pos, cardId);
+      try {
+        await this.chain.submitCardDecryption(hand.handId, pos, cardId);
+      } catch (err) {
+        if (!this.isAlreadySubmittedError(err)) throw err;
+      }
+      this.showdownSubmitted.add(key);
     }
 
     // Compute winner if we're the leader
@@ -527,6 +621,8 @@ class PokerBot {
       if (
         gs.communityCards &&
         gs.communityCards.flop1 !== CARD_NOT_DEALT &&
+        gs.communityCards.flop2 !== CARD_NOT_DEALT &&
+        gs.communityCards.flop3 !== CARD_NOT_DEALT &&
         gs.communityCards.turn !== CARD_NOT_DEALT &&
         gs.communityCards.river !== CARD_NOT_DEALT
       ) {
@@ -538,11 +634,11 @@ class PokerBot {
         );
 
         if (allRevealed && activePlayers.length > 0) {
-          const leader = activePlayers.sort((a, b) => a.seatIndex - b.seatIndex)[0];
+          const leader = [...activePlayers].sort((a, b) => a.seatIndex - b.seatIndex)[0];
           if (leader.seatIndex === mySeat.seatIndex) {
-            this.computeWinnerHand = hand.handId;
             log.action("Computing winner");
             await this.chain.computeWinner(hand.handId);
+            this.computeWinnerHand = hand.handId;
           }
         }
       }
@@ -560,9 +656,9 @@ class PokerBot {
     if (sorted.length === 0) return;
     if (sorted[0].player.toLowerCase() !== this.config.address.toLowerCase()) return;
 
-    this.distributePotHand = hand.handId;
     log.action("Distributing pot");
     await this.chain.distributePot(hand.handId);
+    this.distributePotHand = hand.handId;
   }
 }
 

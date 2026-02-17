@@ -102,6 +102,14 @@ export interface RevealTokenData {
   proofVerified: boolean;
 }
 
+export interface CardDecryptionVoteData {
+  handId: number;
+  cardPosition: number;
+  voterSeat: number;
+  cardId: number;
+  submitted: boolean;
+}
+
 export interface GameState {
   table: TableData | null;
   seats: SeatData[];
@@ -110,6 +118,7 @@ export interface GameState {
   communityCards: CommunityCardsData | null;
   currentDeck: EncryptedDeckData | null;
   revealTokens: RevealTokenData[];
+  cardVotes: CardDecryptionVoteData[];
 }
 
 // ───────────────────── Parsing helpers ─────────────────────
@@ -123,6 +132,7 @@ const MODELS = {
   communityCards: `${NAMESPACE}-CommunityCards`,
   encryptedDeck: `${NAMESPACE}-EncryptedDeck`,
   revealToken: `${NAMESPACE}-RevealToken`,
+  cardDecryptionVote: `${NAMESPACE}-CardDecryptionVote`,
 } as const;
 
 function asNum(v: unknown, fallback = 0): number {
@@ -282,6 +292,18 @@ function parseRevealToken(models: Record<string, unknown>): RevealTokenData | nu
   };
 }
 
+function parseCardDecryptionVote(models: Record<string, unknown>): CardDecryptionVoteData | null {
+  const v = models[MODELS.cardDecryptionVote] as Record<string, unknown> | undefined;
+  if (!v) return null;
+  return {
+    handId: asNum(v.hand_id),
+    cardPosition: asNum(v.card_position),
+    voterSeat: asNum(v.voter_seat),
+    cardId: asNum(v.card_id),
+    submitted: asBool(v.submitted),
+  };
+}
+
 // ───────────────────── State Reader ─────────────────────
 
 export class StateReader {
@@ -330,6 +352,7 @@ export class StateReader {
       communityCards: null,
       currentDeck: null,
       revealTokens: [],
+      cardVotes: [],
     };
 
     try {
@@ -356,15 +379,17 @@ export class StateReader {
       let communityCards: CommunityCardsData | null = null;
       let currentDeck: EncryptedDeckData | null = null;
       let revealTokens: RevealTokenData[] = [];
+      let cardVotes: CardDecryptionVoteData[] = [];
 
       const handId = table.currentHandId;
       if (handId > 0) {
-        const [handE, phE, ccE, deckE, tokenE] = await Promise.all([
+        const [handE, phE, ccE, deckE, tokenE, voteE] = await Promise.all([
           this.fetchModel(MODELS.hand, [String(handId)], 1),
           this.fetchModel(MODELS.playerHand, [String(handId)], 16),
           this.fetchModel(MODELS.communityCards, [String(handId)], 1),
           this.fetchModel(MODELS.encryptedDeck, [String(handId)], 64),
           this.fetchModel(MODELS.revealToken, [String(handId)], 1500),
+          this.fetchModel(MODELS.cardDecryptionVote, [String(handId)], 512),
         ]);
 
         if (handE.length > 0) {
@@ -397,9 +422,19 @@ export class StateReader {
             ? a.cardPosition - b.cardPosition
             : a.playerSeat - b.playerSeat,
         );
+
+        for (const e of voteE) {
+          const vote = parseCardDecryptionVote(e.models?.[NAMESPACE] ?? {});
+          if (vote && vote.submitted) cardVotes.push(vote);
+        }
+        cardVotes.sort((a, b) =>
+          a.cardPosition !== b.cardPosition
+            ? a.cardPosition - b.cardPosition
+            : a.voterSeat - b.voterSeat,
+        );
       }
 
-      return { table, seats, hand, playerHands, communityCards, currentDeck, revealTokens };
+      return { table, seats, hand, playerHands, communityCards, currentDeck, revealTokens, cardVotes };
     } catch (err) {
       log.error(`State poll failed: ${err instanceof Error ? err.message : String(err)}`);
       return empty;
