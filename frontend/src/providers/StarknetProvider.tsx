@@ -6,6 +6,7 @@ import Controller from "@cartridge/controller";
 import type { SessionPolicies } from "@cartridge/presets";
 import { RPC_URL } from "@/lib/dojo-config";
 import { getSystemAddress } from "@/lib/contracts";
+import { TONGO_STRK_ADDRESS, STRK_TOKEN_ADDRESS } from "@/lib/constants";
 
 interface StarknetContextType {
   address: string | null;
@@ -167,6 +168,30 @@ const SESSION_POLICIES: SessionPolicies = {
       ? {
           [CHAT_ADDRESS]: {
             methods: [{ entrypoint: "send_message" }, { entrypoint: "send_emote" }],
+          },
+        }
+      : {}),
+    // Tongo confidential token + STRK ERC20 approval
+    ...(TONGO_STRK_ADDRESS
+      ? {
+          [TONGO_STRK_ADDRESS]: {
+            methods: [
+              { entrypoint: "fund" },
+              { entrypoint: "withdraw" },
+              { entrypoint: "transfer" },
+              { entrypoint: "rollover" },
+              { entrypoint: "ragequit" },
+            ],
+          },
+        }
+      : {}),
+    ...(STRK_TOKEN_ADDRESS
+      ? {
+          [STRK_TOKEN_ADDRESS]: {
+            methods: [
+              { entrypoint: "approve" },
+              { entrypoint: "transfer" },
+            ],
           },
         }
       : {}),

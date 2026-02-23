@@ -5,8 +5,10 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PokerTable from "@/components/poker/PokerTable";
 import ChatPanel from "@/components/poker/ChatPanel";
+import TongoWallet from "@/components/poker/TongoWallet";
 import { useGameOrchestrator } from "@/hooks/useGameOrchestrator";
 import { useStarknet } from "@/providers/StarknetProvider";
+import { useTongo } from "@/hooks/useTongo";
 import { PlayerAction } from "@/lib/constants";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 
@@ -15,7 +17,8 @@ export default function TablePage() {
   const searchParams = useSearchParams();
   const isSolo = searchParams.get("solo") === "true";
   const tableId = Number(params.id);
-  const { address, isConnected, connect, error: walletError } = useStarknet();
+  const { address, account, isConnected, connect, error: walletError } = useStarknet();
+  const tongo = useTongo(address, account);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const {
@@ -243,8 +246,11 @@ export default function TablePage() {
           />
         </div>
 
-        <aside className="hidden w-80 p-2 lg:flex">
+        <aside className="hidden w-80 flex-col gap-2 p-2 lg:flex">
           <div className="w-full overflow-hidden rounded-sm brand-panel">
+            <TongoWallet tongo={tongo} walletAddress={localAddress} />
+          </div>
+          <div className="min-h-0 w-full flex-1 overflow-hidden rounded-sm brand-panel">
             <ChatPanel tableId={tableId} />
           </div>
         </aside>

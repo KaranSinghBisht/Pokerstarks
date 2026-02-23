@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStarknet } from "@/providers/StarknetProvider";
 import { useLobby } from "@/hooks/useLobby";
+import { useTongo } from "@/hooks/useTongo";
+import TongoWallet from "@/components/poker/TongoWallet";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 
 const ROOM_NAMES = [
@@ -29,6 +31,7 @@ export default function LobbyPage() {
   const router = useRouter();
   const {
     address,
+    account,
     isConnected,
     connecting,
     connect,
@@ -36,6 +39,8 @@ export default function LobbyPage() {
     error: walletError,
   } = useStarknet();
   const { tables, loading, error: lobbyError, createTable, refresh } = useLobby();
+  const tongo = useTongo(address, account);
+  const [showTongoWallet, setShowTongoWallet] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
   const [creatingSolo, setCreatingSolo] = useState(false);
@@ -144,6 +149,14 @@ export default function LobbyPage() {
               <span className="font-retro-display text-[10px]">{walletLabel}</span>
             </div>
           </div>
+          {isConnected && (
+            <button
+              onClick={() => setShowTongoWallet((v) => !v)}
+              className="flex items-center gap-2 px-4 py-3 font-retro-display text-[10px] brand-btn-cyan"
+            >
+              TONGO WALLET
+            </button>
+          )}
           <button
             onClick={isConnected ? disconnect : connect}
             disabled={connecting}
@@ -277,6 +290,29 @@ export default function LobbyPage() {
           </div>
         )}
       </main>
+
+      {showTongoWallet && address && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-end bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setShowTongoWallet(false)}
+        >
+          <div
+            className="mt-16 w-full max-w-sm overflow-hidden rounded-sm brand-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b-2 border-black bg-black/10 p-4">
+              <h3 className="font-retro-display text-[10px] text-slate-300">CONFIDENTIAL WALLET</h3>
+              <button
+                onClick={() => setShowTongoWallet(false)}
+                className="font-retro-display text-xs text-slate-400 hover:text-white"
+              >
+                X
+              </button>
+            </div>
+            <TongoWallet tongo={tongo} walletAddress={address} />
+          </div>
+        </div>
+      )}
 
       {showCreate && (
         <div
