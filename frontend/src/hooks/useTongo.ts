@@ -138,13 +138,15 @@ export function useTongo(
   const initAddressRef = useRef<string>("");
   // Monotonic counter to cancel stale balance fetches (P3 fix)
   const balanceGenRef = useRef(0);
+  // Bumped to force re-init on same address (e.g. after key import)
+  const [reinitCounter, setReinitCounter] = useState(0);
+  const prevReinitRef = useRef(0);
 
-  // Initialize Tongo account when wallet connects
+  // Initialize Tongo account when wallet connects (or reinitCounter bumps)
   useEffect(() => {
     if (!walletAddress) {
       tongoRef.current = null;
       setIsAvailable(false);
-      // Clear all state immediately on disconnect (P3 fix)
       setBalance(null);
       setPending(null);
       setBalanceStatus("idle");
@@ -157,9 +159,12 @@ export function useTongo(
     }
 
     const normalAddr = walletAddress.toLowerCase();
-    if (initAddressRef.current === normalAddr) return;
+    const isReinit = reinitCounter !== prevReinitRef.current;
+    // Skip if address matches AND no forced reinit was requested
+    if (initAddressRef.current === normalAddr && !isReinit) return;
+    prevReinitRef.current = reinitCounter;
 
-    // Switching wallets: clear stale state before re-init (P3 fix)
+    // Clear stale state before (re-)init
     setBalance(null);
     setPending(null);
     setBalanceStatus("idle");
@@ -179,6 +184,29 @@ export function useTongo(
         providerRef.current = new RpcProvider({ nodeUrl: RPC_URL });
       }
 
+      // P3 fix: validate that the provider's chain matches Sepolia (SN_SEPOLIA = 0x534e5f5345504f4c4941).
+      // If the wallet is on a different chain, Tongo proofs will fail silently.
+      providerRef.current.getChainId().then((chainId) => {
+        const sepoliaId = "0x534e5f5345504f4c4941";
+        const mainnetId = "0x534e5f4d41494e";
+        // Tongo STRK address is for Sepolia; warn if chain doesn't match
+        if (
+          TONGO_STRK_ADDRESS.toLowerCase() ===
+            "0x408163bfcfc2d76f34b444cb55e09dace5905cf84c0884e4637c2c0f06ab6ed" &&
+          chainId !== sepoliaId
+        ) {
+          setError("Chain mismatch: Tongo contract is Sepolia but RPC is on a different network");
+        } else if (
+          TONGO_STRK_ADDRESS.toLowerCase() ===
+            "0x3a542d7eb73b3e33a2c54e9827ec17a6365e289ec35ccc94dde97950d9db498" &&
+          chainId !== mainnetId
+        ) {
+          setError("Chain mismatch: Tongo contract is Mainnet but RPC is on a different network");
+        }
+      }).catch(() => {
+        // Non-fatal: chain check is best-effort
+      });
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tongoAccount = new TongoAccount(
         pk,
@@ -197,7 +225,7 @@ export function useTongo(
       setError(err instanceof Error ? err.message : "Tongo init failed");
       setIsAvailable(false);
     }
-  }, [walletAddress]);
+  }, [walletAddress, reinitCounter]);
 
   // Auto-fetch balance once initialized
   const refreshBalance = useCallback(async () => {
@@ -222,9 +250,11 @@ export function useTongo(
       // SDK surfaces as a specific error. True RPC/network errors are different.
       const msg = err instanceof Error ? err.message : String(err);
       const isAccountNotFound =
-        msg.includes("Entry point") || // contract method not found (account doesn't exist)
-        msg.includes("not deployed") ||
-        msg.includes("Contract not found");
+        msg.includes("StarknetErrorCode.UNINITIALIZED_CONTRACT") ||
+        msg.includes("is not deployed") ||
+        msg.includes("Contract not found") ||
+        msg.includes("ContractNotFound") ||
+        /Entry point .* not found in contract/.test(msg);
 
       if (isAccountNotFound) {
         setBalance(0n);
@@ -369,11 +399,10 @@ export function useTongo(
       if (!walletAddress) return false;
       const ok = importTongoKey(walletAddress, hexKey);
       if (ok) {
-        // Force re-init by clearing the address guard
+        // Force re-init by bumping reinitCounter (effect depends on it)
         initAddressRef.current = "";
         balanceGenRef.current++;
-        // Trigger re-init on next render
-        setIsAvailable(false);
+        setReinitCounter((c) => c + 1);
       }
       return ok;
     },
