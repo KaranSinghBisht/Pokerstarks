@@ -18,5 +18,10 @@
   "devDependencies": {
     "tsx": "^4.19.0",
     "@types/node": "^20"
+  },
+  "overrides": {
+    "@latticexyz/schema-type": "2.2.23",
+    "viem": "2.46.1",
+    "ws": "8.19.0"
   }
 }

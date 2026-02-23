@@ -33,24 +33,20 @@ import { StateReader, type GameState, type HandData, type PlayerHandData, type S
 import { generateProof } from "./prover.js";
 import { decideBettingAction, type StrategyMode } from "./strategy.js";
 import { log } from "./log.js";
+import {
+  computeAggregateKey,
+  MentalPokerSession,
+  serializeDeck,
+  deserializeDeck,
+  type Point,
+} from "./frontend-shims.js";
 
 // ───────────────────── Crypto imports (shared with frontend) ─────
 
-// These are pure TypeScript — no browser deps
-import {
-  computeAggregateKey,
-  type Point,
-} from "../../frontend/src/lib/cards/elgamal.js";
-
-import { MentalPokerSession } from "../../frontend/src/lib/cards/mental-poker.js";
-
-import {
-  serializeDeck,
-  deserializeDeck,
-} from "../../frontend/src/lib/noir/shuffle.js";
-
 const BN254_SCALAR_FIELD =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+type MentalPokerSessionInstance = InstanceType<typeof MentalPokerSession>;
 
 // ───────────────────── CLI Args ─────────────────────
 
@@ -69,8 +65,35 @@ interface BotConfig {
   pollMs: number;
 }
 
+const HELP_TEXT = `Pokerstarks AI Bot — headless poker player
+
+Usage:
+  npx tsx index.ts --table <id> --seat <index> --private-key <hex> --address <hex> [options]
+
+Required:
+  --table         Table ID to join
+  --seat          Seat index (0-5)
+  --private-key   Katana account private key
+  --address       Katana account address
+
+Optional:
+  --strategy      passive | aggressive | random (default: passive)
+  --buy-in        Buy-in amount (default: table minimum)
+  --rpc-url       RPC URL (default: http://localhost:5050)
+  --torii-url     Torii URL (default: http://localhost:8080)
+  --world         World contract address (default: contracts/manifest_dev.json)
+  --poll-ms       Poll interval in ms (default: 2000)
+  -h, --help      Show this help message
+`;
+
 function parseArgs(): BotConfig {
   const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    process.stdout.write(HELP_TEXT);
+    process.exit(0);
+  }
+
   const get = (flag: string, fallback?: string): string => {
     const idx = args.indexOf(flag);
     if (idx !== -1 && args[idx + 1]) return args[idx + 1];
@@ -146,7 +169,7 @@ class PokerBot {
   private config: BotConfig;
   private chain: BotChain;
   private state: StateReader;
-  private session: MentalPokerSession | null = null;
+  private session: MentalPokerSessionInstance | null = null;
   private sessionHandId = 0;
   private running = true;
   private lastSeenHandId = 0;
@@ -199,7 +222,7 @@ class PokerBot {
     this.timeoutGuard = "";
   }
 
-  private ensureSessionForHand(handId: number): MentalPokerSession {
+  private ensureSessionForHand(handId: number): MentalPokerSessionInstance {
     if (this.session && this.sessionHandId === handId) {
       return this.session;
     }
