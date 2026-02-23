@@ -12,43 +12,69 @@ import {
 import { RPC_URL } from "@/lib/dojo-config";
 
 // ─── Tongo private key management ───
-// We generate a random Tongo private key per wallet address and persist it
-// in localStorage. This key is separate from the Starknet wallet key.
+// Private key is generated once per wallet address and persisted in localStorage.
+// Users can export/import the key to recover across devices/browsers.
 
 function getTongoStorageKey(walletAddress: string): string {
   return `${TONGO_KEY_STORAGE_PREFIX}:${walletAddress.toLowerCase()}`;
 }
 
-function loadOrCreateTongoKey(walletAddress: string): bigint {
-  if (typeof window === "undefined") return 0n;
-
+function loadTongoKey(walletAddress: string): bigint | null {
+  if (typeof window === "undefined") return null;
   const stored = localStorage.getItem(getTongoStorageKey(walletAddress));
-  if (stored) {
-    try {
-      return BigInt(stored);
-    } catch {
-      // Corrupted — regenerate
-    }
+  if (!stored) return null;
+  try {
+    const pk = BigInt(stored);
+    return pk > 0n ? pk : null;
+  } catch {
+    return null;
   }
+}
 
-  // Generate a random 252-bit private key (Stark curve order is ~252 bits)
+function generateTongoKey(): bigint {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  // Ensure it's within the Stark curve order by masking top bits
-  bytes[0] &= 0x0f; // Keep it under 2^252
+  bytes[0] &= 0x0f; // Keep under 2^252 (Stark curve order)
   let pk = 0n;
   for (const b of bytes) {
     pk = (pk << 8n) | BigInt(b);
   }
-  if (pk === 0n) pk = 1n; // Never zero
+  return pk === 0n ? 1n : pk;
+}
 
+function saveTongoKey(walletAddress: string, pk: bigint): void {
+  if (typeof window === "undefined") return;
   localStorage.setItem(getTongoStorageKey(walletAddress), pk.toString());
-  return pk;
+}
+
+/** Export the Tongo private key as a hex string for backup */
+export function exportTongoKey(walletAddress: string): string | null {
+  const pk = loadTongoKey(walletAddress);
+  if (!pk) return null;
+  return "0x" + pk.toString(16);
+}
+
+/** Import a Tongo private key from a hex string (backup recovery) */
+export function importTongoKey(walletAddress: string, hexKey: string): boolean {
+  try {
+    const pk = BigInt(hexKey);
+    if (pk <= 0n) return false;
+    saveTongoKey(walletAddress, pk);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─── Conversion helpers ───
 
-/** Convert STRK amount (18 decimals) to Tongo units */
+/** Snap a human STRK amount to the nearest valid Tongo unit boundary */
+export function snapToTongoStep(strkAmount: number): number {
+  const strkPerUnit = Number(TONGO_STRK_RATE) / 1e18; // 0.05
+  return Math.round(strkAmount / strkPerUnit) * strkPerUnit;
+}
+
+/** Convert STRK amount (18 decimals) to Tongo units (rounds down) */
 export function strkToTongo(strkWei: bigint): bigint {
   return strkWei / TONGO_STRK_RATE;
 }
@@ -66,31 +92,32 @@ export function formatTongoAsStrk(tongoUnits: bigint): string {
   return `${whole}.${frac.toString().padStart(2, "0")} STRK`;
 }
 
+// ─── Balance fetch status ───
+
+type BalanceStatus = "idle" | "loading" | "ok" | "error";
+
 // ─── Hook return type ───
 
 export interface UseTongoReturn {
-  /** Whether Tongo SDK is initialized and ready */
   isAvailable: boolean;
   /** Decrypted balance in Tongo units (null if not yet loaded) */
   balance: bigint | null;
   /** Pending balance awaiting rollover (Tongo units) */
   pending: bigint | null;
-  /** Tongo public key for receiving transfers */
+  /** Whether the balance fetch is in an error state (vs genuinely zero) */
+  balanceStatus: BalanceStatus;
   publicKey: { x: bigint; y: bigint } | null;
-  /** Tongo address (base58) */
   tongoAddress: string | null;
-  /** Loading state for any operation */
   loading: boolean;
-  /** Last error message */
   error: string | null;
-  /** Wrap STRK into Tongo (amount in Tongo units) */
   fund: (tongoAmount: bigint) => Promise<void>;
-  /** Unwrap Tongo back to STRK (amount in Tongo units, to wallet address) */
   withdraw: (tongoAmount: bigint, toAddress: string) => Promise<void>;
-  /** Claim pending transfers into spendable balance */
   rollover: () => Promise<void>;
-  /** Refresh balance from on-chain state */
   refreshBalance: () => Promise<void>;
+  /** Export private key as hex for backup */
+  exportKey: () => string | null;
+  /** Import private key from hex backup; returns true on success */
+  importKey: (hexKey: string) => boolean;
 }
 
 export function useTongo(
@@ -100,6 +127,7 @@ export function useTongo(
   const [isAvailable, setIsAvailable] = useState(false);
   const [balance, setBalance] = useState<bigint | null>(null);
   const [pending, setPending] = useState<bigint | null>(null);
+  const [balanceStatus, setBalanceStatus] = useState<BalanceStatus>("idle");
   const [publicKey, setPublicKey] = useState<{ x: bigint; y: bigint } | null>(null);
   const [tongoAddress, setTongoAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -108,34 +136,49 @@ export function useTongo(
   const tongoRef = useRef<TongoAccount | null>(null);
   const providerRef = useRef<RpcProvider | null>(null);
   const initAddressRef = useRef<string>("");
+  // Monotonic counter to cancel stale balance fetches (P3 fix)
+  const balanceGenRef = useRef(0);
 
   // Initialize Tongo account when wallet connects
   useEffect(() => {
     if (!walletAddress) {
       tongoRef.current = null;
       setIsAvailable(false);
+      // Clear all state immediately on disconnect (P3 fix)
       setBalance(null);
       setPending(null);
+      setBalanceStatus("idle");
       setPublicKey(null);
       setTongoAddress(null);
+      setError(null);
       initAddressRef.current = "";
+      balanceGenRef.current++;
       return;
     }
 
-    if (initAddressRef.current === walletAddress.toLowerCase()) return;
-    initAddressRef.current = walletAddress.toLowerCase();
+    const normalAddr = walletAddress.toLowerCase();
+    if (initAddressRef.current === normalAddr) return;
+
+    // Switching wallets: clear stale state before re-init (P3 fix)
+    setBalance(null);
+    setPending(null);
+    setBalanceStatus("idle");
+    setError(null);
+    balanceGenRef.current++;
+
+    initAddressRef.current = normalAddr;
 
     try {
-      const pk = loadOrCreateTongoKey(walletAddress);
-      if (pk === 0n) return;
+      let pk = loadTongoKey(walletAddress);
+      if (!pk) {
+        pk = generateTongoKey();
+        saveTongoKey(walletAddress, pk);
+      }
 
       if (!providerRef.current) {
         providerRef.current = new RpcProvider({ nodeUrl: RPC_URL });
       }
 
-      // Cast to `any` because the app's starknet.js version may differ from the
-      // SDK's bundled starknet.js, causing incompatible private-property types.
-      // At runtime the RpcProvider implementations are compatible.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tongoAccount = new TongoAccount(
         pk,
@@ -161,15 +204,38 @@ export function useTongo(
     const tongo = tongoRef.current;
     if (!tongo) return;
 
+    const gen = ++balanceGenRef.current;
+    setBalanceStatus("loading");
+
     try {
       const state = await tongo.state();
+      // Stale guard: discard if a newer fetch/wallet-switch happened (P3 fix)
+      if (balanceGenRef.current !== gen) return;
       setBalance(state.balance);
       setPending(state.pending);
+      setBalanceStatus("ok");
     } catch (err) {
-      // Account may not exist on-chain yet (never funded) — balance is 0
-      console.warn("Tongo balance fetch:", err);
-      setBalance(0n);
-      setPending(0n);
+      if (balanceGenRef.current !== gen) return;
+
+      // P2 fix: Distinguish "account not found" (genuinely 0) from RPC errors.
+      // Tongo contract returns empty state for never-funded accounts, which the
+      // SDK surfaces as a specific error. True RPC/network errors are different.
+      const msg = err instanceof Error ? err.message : String(err);
+      const isAccountNotFound =
+        msg.includes("Entry point") || // contract method not found (account doesn't exist)
+        msg.includes("not deployed") ||
+        msg.includes("Contract not found");
+
+      if (isAccountNotFound) {
+        setBalance(0n);
+        setPending(0n);
+        setBalanceStatus("ok");
+      } else {
+        console.warn("Tongo balance fetch error:", err);
+        // Keep previous balance visible, surface error
+        setBalanceStatus("error");
+        setError("Balance fetch failed — values may be stale");
+      }
     }
   }, []);
 
@@ -178,6 +244,34 @@ export function useTongo(
       refreshBalance();
     }
   }, [isAvailable, refreshBalance]);
+
+  // ─── Transaction executor with safe waitForTransaction ───
+  // P2 fix: if account.execute succeeds but waitForTransaction fails, the tx
+  // was likely already accepted. We refresh balance and show a warning instead
+  // of treating it as a full failure that invites retry.
+  const execAndWait = useCallback(
+    async (
+      calls: Parameters<AccountInterface["execute"]>[0],
+      label: string,
+    ): Promise<void> => {
+      const tx = await account!.execute(calls);
+
+      if (providerRef.current && tx?.transaction_hash) {
+        try {
+          await providerRef.current.waitForTransaction(tx.transaction_hash);
+        } catch (waitErr) {
+          console.warn(`${label}: waitForTransaction failed, tx may still land:`, waitErr);
+          // Refresh balance to show real state instead of throwing
+          await refreshBalance();
+          setError(`${label} submitted (tx ${tx.transaction_hash.slice(0, 10)}...) but confirmation timed out. Balance refreshed.`);
+          return; // Do NOT throw — tx is likely accepted
+        }
+      }
+
+      await refreshBalance();
+    },
+    [account, refreshBalance],
+  );
 
   // Fund: wrap STRK → Tongo
   const fund = useCallback(
@@ -196,16 +290,8 @@ export function useTongo(
           sender: walletAddress,
         });
 
-        // Execute: ERC20 approval + fund in one multicall
         const calls = op.approve ? [op.approve, op.toCalldata()] : [op.toCalldata()];
-        const tx = await account.execute(calls);
-
-        // Wait for tx confirmation
-        if (providerRef.current && tx?.transaction_hash) {
-          await providerRef.current.waitForTransaction(tx.transaction_hash);
-        }
-
-        await refreshBalance();
+        await execAndWait(calls, "Fund");
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Fund failed";
         setError(msg);
@@ -214,7 +300,7 @@ export function useTongo(
         setLoading(false);
       }
     },
-    [account, walletAddress, refreshBalance],
+    [account, walletAddress, execAndWait],
   );
 
   // Withdraw: Tongo → STRK
@@ -235,13 +321,7 @@ export function useTongo(
           sender: walletAddress,
         });
 
-        const tx = await account.execute([op.toCalldata()]);
-
-        if (providerRef.current && tx?.transaction_hash) {
-          await providerRef.current.waitForTransaction(tx.transaction_hash);
-        }
-
-        await refreshBalance();
+        await execAndWait([op.toCalldata()], "Withdraw");
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Withdraw failed";
         setError(msg);
@@ -250,7 +330,7 @@ export function useTongo(
         setLoading(false);
       }
     },
-    [account, walletAddress, refreshBalance],
+    [account, walletAddress, execAndWait],
   );
 
   // Rollover: move pending → balance
@@ -268,13 +348,7 @@ export function useTongo(
         sender: walletAddress,
       });
 
-      const tx = await account.execute([op.toCalldata()]);
-
-      if (providerRef.current && tx?.transaction_hash) {
-        await providerRef.current.waitForTransaction(tx.transaction_hash);
-      }
-
-      await refreshBalance();
+      await execAndWait([op.toCalldata()], "Rollover");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Rollover failed";
       setError(msg);
@@ -282,12 +356,35 @@ export function useTongo(
     } finally {
       setLoading(false);
     }
-  }, [account, walletAddress, refreshBalance]);
+  }, [account, walletAddress, execAndWait]);
+
+  // P1 fix: key export/import for backup & recovery
+  const exportKeyFn = useCallback((): string | null => {
+    if (!walletAddress) return null;
+    return exportTongoKey(walletAddress);
+  }, [walletAddress]);
+
+  const importKeyFn = useCallback(
+    (hexKey: string): boolean => {
+      if (!walletAddress) return false;
+      const ok = importTongoKey(walletAddress, hexKey);
+      if (ok) {
+        // Force re-init by clearing the address guard
+        initAddressRef.current = "";
+        balanceGenRef.current++;
+        // Trigger re-init on next render
+        setIsAvailable(false);
+      }
+      return ok;
+    },
+    [walletAddress],
+  );
 
   return {
     isAvailable,
     balance,
     pending,
+    balanceStatus,
     publicKey,
     tongoAddress,
     loading,
@@ -296,5 +393,7 @@ export function useTongo(
     withdraw,
     rollover,
     refreshBalance,
+    exportKey: exportKeyFn,
+    importKey: importKeyFn,
   };
 }
