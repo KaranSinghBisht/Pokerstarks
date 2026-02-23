@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useStarknet } from "@/providers/StarknetProvider";
 import { useLobby } from "@/hooks/useLobby";
 import BrandWordmark from "@/components/brand/BrandWordmark";
@@ -25,6 +26,7 @@ const ROOM_BACKGROUNDS = [
 ];
 
 export default function LobbyPage() {
+  const router = useRouter();
   const {
     address,
     isConnected,
@@ -33,9 +35,10 @@ export default function LobbyPage() {
     disconnect,
     error: walletError,
   } = useStarknet();
-  const { tables, loading, error: lobbyError, createTable } = useLobby();
+  const { tables, loading, error: lobbyError, createTable, refresh } = useLobby();
 
   const [showCreate, setShowCreate] = useState(false);
+  const [creatingSolo, setCreatingSolo] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState({
     maxPlayers: "6",
@@ -68,6 +71,53 @@ export default function LobbyPage() {
       setShowCreate(false);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Table creation failed.");
+    }
+  };
+
+  const handlePlaySolo = async () => {
+    if (!isConnected || !address) {
+      connect();
+      return;
+    }
+    try {
+      setCreateError(null);
+      setCreatingSolo(true);
+
+      // Note current highest table ID to detect the new one
+      const prevMaxId = tables.reduce(
+        (max, t) => Math.max(max, t.tableId),
+        0,
+      );
+
+      // Create table with sensible defaults
+      await createTable({
+        maxPlayers: 3,
+        smallBlind: 5n,
+        bigBlind: 10n,
+        minBuyIn: 100n,
+        maxBuyIn: 1000n,
+      });
+
+      // Refresh and find the newly created table
+      refresh();
+      // Small delay to let Torii index the new table
+      await new Promise((r) => setTimeout(r, 2000));
+      refresh();
+      // Wait a tick for state to update, then find from DOM-fresh tables
+      await new Promise((r) => setTimeout(r, 500));
+
+      // Re-fetch tables directly to get the latest
+      // The refresh() above updates state asynchronously, so we
+      // navigate based on prevMaxId + 1 as a reasonable guess.
+      // The table page will handle the solo flow regardless.
+      const newTableId = prevMaxId + 1;
+      router.push(`/table/${newTableId}?solo=true`);
+    } catch (err) {
+      setCreateError(
+        err instanceof Error ? err.message : "Solo game creation failed.",
+      );
+    } finally {
+      setCreatingSolo(false);
     }
   };
 
@@ -131,13 +181,22 @@ export default function LobbyPage() {
             </div>
           </div>
 
-          <button
-            onClick={() => setShowCreate(true)}
-            className="group flex items-center gap-3 px-8 py-4 font-retro-display text-xs brand-btn-cyan"
-          >
-            <span className="transition-transform group-hover:rotate-90">+</span>
-            CREATE TABLE
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handlePlaySolo}
+              disabled={creatingSolo}
+              className="group flex items-center gap-3 px-8 py-4 font-retro-display text-xs brand-btn-magenta disabled:opacity-50"
+            >
+              {creatingSolo ? "CREATING..." : "PLAY SOLO"}
+            </button>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="group flex items-center gap-3 px-8 py-4 font-retro-display text-xs brand-btn-cyan"
+            >
+              <span className="transition-transform group-hover:rotate-90">+</span>
+              CREATE TABLE
+            </button>
+          </div>
         </div>
 
         {loading ? (

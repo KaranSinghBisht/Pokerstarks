@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PokerTable from "@/components/poker/PokerTable";
 import ChatPanel from "@/components/poker/ChatPanel";
@@ -12,6 +12,8 @@ import BrandWordmark from "@/components/brand/BrandWordmark";
 
 export default function TablePage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const isSolo = searchParams.get("solo") === "true";
   const tableId = Number(params.id);
   const { address, isConnected, connect, error: walletError } = useStarknet();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -31,6 +33,95 @@ export default function TablePage() {
   } = useGameOrchestrator(tableId);
 
   const localAddress = address || "";
+  const [fillingBots, setFillingBots] = useState(false);
+
+  const isHost =
+    !!table &&
+    !!localAddress &&
+    table.creator.toLowerCase() === localAddress.toLowerCase();
+
+  const handleFillWithBots = useCallback(async () => {
+    if (!table) return;
+    setFillingBots(true);
+    setActionError(null);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const secret = process.env.NEXT_PUBLIC_BOT_API_SECRET;
+      if (secret) headers["Authorization"] = `Bearer ${secret}`;
+      const res = await fetch("/api/bot/fill", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ tableId: table.tableId }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setActionError(data.error);
+      }
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to fill with bots.",
+      );
+    } finally {
+      setFillingBots(false);
+    }
+  }, [table]);
+
+  // ─── Solo mode automation ───
+  // When navigated with ?solo=true, auto-join → fill bots → ready
+  const soloStepRef = useRef<"join" | "fill" | "ready" | "done">(
+    isSolo ? "join" : "done",
+  );
+
+  useEffect(() => {
+    if (!isSolo || !table || !localAddress || loading) return;
+    const step = soloStepRef.current;
+
+    const localSeat = seats.find(
+      (s) => s.isOccupied && s.player.toLowerCase() === localAddress.toLowerCase(),
+    );
+
+    if (step === "join" && !localSeat && table.state === "Waiting") {
+      soloStepRef.current = "fill"; // advance immediately to avoid re-trigger
+      actions.joinTable(0, table.minBuyIn).catch((err) => {
+        setActionError(err instanceof Error ? err.message : "Solo join failed.");
+        soloStepRef.current = "done";
+      });
+      return;
+    }
+
+    if ((step === "join" || step === "fill") && localSeat && table.state === "Waiting") {
+      soloStepRef.current = "ready"; // advance
+      setFillingBots(true);
+      const soloHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      const soloSecret = process.env.NEXT_PUBLIC_BOT_API_SECRET;
+      if (soloSecret) soloHeaders["Authorization"] = `Bearer ${soloSecret}`;
+      fetch("/api/bot/fill", {
+        method: "POST",
+        headers: soloHeaders,
+        body: JSON.stringify({ tableId: table.tableId }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) setActionError(data.error);
+        })
+        .catch((err) => {
+          setActionError(err instanceof Error ? err.message : "Bot fill failed.");
+        })
+        .finally(() => setFillingBots(false));
+      return;
+    }
+
+    if (step === "ready" && localSeat && !localSeat.isReady && table.state === "Waiting") {
+      soloStepRef.current = "done";
+      // Small delay to let bots join first
+      const timer = setTimeout(() => {
+        actions.setReady().catch((err) => {
+          setActionError(err instanceof Error ? err.message : "Auto-ready failed.");
+        });
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSolo, table, seats, localAddress, loading, actions, setActionError]);
 
   const handleAction = useCallback(
     (action: PlayerAction, amount: bigint) => {
@@ -146,6 +237,9 @@ export default function TablePage() {
             myHoleCards={myHoleCards}
             isProving={isProving}
             provingProgress={provingProgress}
+            isHost={isHost}
+            onFillWithBots={handleFillWithBots}
+            fillingBots={fillingBots}
           />
         </div>
 
