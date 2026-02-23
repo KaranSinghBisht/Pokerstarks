@@ -105,6 +105,45 @@ pub mod settle_system {
                         rem_seat.chips += pot - distributed;
                         world.write_model(@rem_seat);
                     }
+                } else {
+                    // S-01 FIX: All players folded or no valid non-folded bets.
+                    // Refund proportionally to ALL players based on total_bet.
+                    let pot = hand.pot;
+                    let mut total_all_bet: u128 = 0;
+                    let mut ai: u8 = 0;
+                    while ai < table.max_players {
+                        let ph: PlayerHand = world.read_model((hand_id, ai));
+                        if ph.player != ZERO_ADDR.try_into().unwrap() {
+                            total_all_bet += ph.total_bet;
+                        }
+                        ai += 1;
+                    };
+
+                    if total_all_bet > 0 {
+                        let mut distributed: u128 = 0;
+                        let mut first_idx: u8 = 255;
+                        let mut ri: u8 = 0;
+                        while ri < table.max_players {
+                            let ph: PlayerHand = world.read_model((hand_id, ri));
+                            if ph.player != ZERO_ADDR.try_into().unwrap()
+                                && ph.total_bet > 0 {
+                                if first_idx == 255 { first_idx = ri; }
+                                let share = pot * ph.total_bet / total_all_bet;
+                                let mut seat: Seat = world
+                                    .read_model((hand.table_id, ri));
+                                seat.chips += share;
+                                world.write_model(@seat);
+                                distributed += share;
+                            }
+                            ri += 1;
+                        };
+                        if distributed < pot && first_idx != 255 {
+                            let mut rem_seat: Seat = world
+                                .read_model((hand.table_id, first_idx));
+                            rem_seat.chips += pot - distributed;
+                            world.write_model(@rem_seat);
+                        }
+                    }
                 };
             }
 

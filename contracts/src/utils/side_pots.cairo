@@ -135,14 +135,31 @@ pub fn create_side_pots(
 
             let pot_amount = level_amount * contributor_count;
 
-            let side_pot = SidePot {
-                hand_id,
-                pot_index,
-                amount: pot_amount,
-                eligible_mask,
-            };
-            world.write_model(@side_pot);
-            pot_index += 1;
+            // S-02 FIX: If all contributors at this tier folded, the pot is
+            // "dead money". Make all non-folded players eligible so it goes
+            // to the best remaining hand rather than being silently lost.
+            if eligible_mask == 0 {
+                let mut dk: u32 = 0;
+                while dk < n {
+                    if !*all_folded.at(dk) {
+                        let seat = *all_seats.at(dk);
+                        eligible_mask = eligible_mask | shl_u8(1, seat);
+                    }
+                    dk += 1;
+                };
+            }
+
+            // Only write the pot if someone can win it
+            if eligible_mask != 0 {
+                let side_pot = SidePot {
+                    hand_id,
+                    pot_index,
+                    amount: pot_amount,
+                    eligible_mask,
+                };
+                world.write_model(@side_pot);
+                pot_index += 1;
+            }
         }
 
         prev_threshold = threshold;
