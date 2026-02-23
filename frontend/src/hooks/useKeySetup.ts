@@ -230,8 +230,13 @@ export function useKeySetup({
     if (hand.phase !== GamePhase.Shuffling) return;
     if (aggKeySubmittedRef.current === hand.handId) return;
 
-    // S-04 FIX: If aggregate key already set on-chain, skip resubmission.
-    if (hand.aggPubKeyX && hand.aggPubKeyX !== "0") {
+    // S-04 FIX: Check per-player on-chain state to prevent revert after reload.
+    // The contract asserts submitted_agg_x == 0 (game_setup.cairo:283), so if
+    // this player already submitted, we must skip even before global consensus.
+    const myPh = playerHands.find(
+      (ph) => ph.player.toLowerCase() === myAddress.toLowerCase(),
+    );
+    if (myPh && myPh.submittedAggX && myPh.submittedAggX !== "0") {
       aggKeySubmittedRef.current = hand.handId;
       // Still set the aggregate key on the local session so shuffle works
       const keys: Point[] = [];
@@ -241,7 +246,7 @@ export function useKeySetup({
           keys.push({ x: BigInt(ph.publicKeyX), y: BigInt(ph.publicKeyY) });
         }
       }
-      if (keys.length >= hand.numPlayers) {
+      if (keys.length >= hand.numPlayers && sessionRef.current) {
         sessionRef.current.setAggregateKey(keys);
       }
       return;
@@ -283,7 +288,16 @@ export function useKeySetup({
     if (deckHashSubmittedRef.current === hand.handId) return;
     if (!hand.deckSeed || hand.deckSeed === "0") return;
 
-    // S-04 FIX: If deck hash already set on-chain, skip resubmission.
+    // S-04 FIX: Check per-player on-chain state to prevent revert after reload.
+    // The contract asserts submitted_deck_hash == 0 (game_setup.cairo:347).
+    const myPhDeck = playerHands.find(
+      (ph) => ph.player.toLowerCase() === myAddress.toLowerCase(),
+    );
+    if (myPhDeck && myPhDeck.submittedDeckHash && myPhDeck.submittedDeckHash !== "0") {
+      deckHashSubmittedRef.current = hand.handId;
+      return;
+    }
+    // Also skip if global consensus already reached
     if (hand.initialDeckHash && hand.initialDeckHash !== "0") {
       deckHashSubmittedRef.current = hand.handId;
       return;
@@ -300,7 +314,7 @@ export function useKeySetup({
       console.error("Deck hash submission failed:", err);
       deckHashSubmittedRef.current = 0;
     });
-  }, [hand, myAddress, submitInitialDeckHash]);
+  }, [hand, myAddress, playerHands, submitInitialDeckHash]);
 
   // Step 4: Submit full deck once hash consensus is reached
   useEffect(() => {
