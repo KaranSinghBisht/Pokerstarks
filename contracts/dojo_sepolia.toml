@@ -8,9 +8,8 @@ default = "pokerstarks"
 
 [env]
 rpc_url = "https://api.cartridge.gg/x/starknet/sepolia"
-# Set these to your deployer account
-# account_address = "0x..."
-# private_key = "0x..."
+account_address = "0x0311def628d901545cae8eb76dd34b8e45a3bb1ba4cd4edd7bf8675b8c3d54d4"
+private_key = "0x009b2a942b12b2ece01f4f50f548904de648f7ff0da9e50676c07225e844ed9a"
 
 [writers]
 "pokerstarks" = [

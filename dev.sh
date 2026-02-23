@@ -84,11 +84,20 @@ SCARB_LOCK_GLOB="$HOME/Library/Caches/com.swmansion.scarb/registry/cache/"*.redb
 if compgen -G "$SCARB_LOCK_GLOB" > /dev/null; then
     echo -e "       ${YELLOW}Detected scarb lock file(s). If migrate hangs, another scarb/sozo process may hold the lock.${NC}"
 fi
-echo -e "       Command: ${CYAN}sozo migrate -P dev -v${NC}"
+echo -e "       Command: ${CYAN}sozo migrate -P dev -v --private-key \$DOJO_PRIVATE_KEY${NC}"
 echo -e "       ${YELLOW}(First run can take several minutes while scarb resolves/builds dependencies.)${NC}"
 
+if [ -z "${DOJO_PRIVATE_KEY:-}" ]; then
+    echo -e "       ${RED}DOJO_PRIVATE_KEY is not set.${NC}"
+    echo -e "       ${YELLOW}Export your local Katana private key before running dev.sh.${NC}"
+    echo -e "       ${YELLOW}Example: export DOJO_PRIVATE_KEY=0x...${NC}"
+    exit 1
+fi
+
+SOZO_MIGRATE_CMD=(sozo migrate -P dev -v --private-key "$DOJO_PRIVATE_KEY")
+
 SOZO_START_TS=$(date +%s)
-if ! sozo migrate -P dev -v 2>&1 | tee "$LOG_DIR/sozo.log"; then
+if ! "${SOZO_MIGRATE_CMD[@]}" 2>&1 | tee "$LOG_DIR/sozo.log"; then
     cd "$ROOT_DIR"
     echo -e "       ${RED}sozo migrate FAILED — check logs/sozo.log${NC}"
     exit 1
