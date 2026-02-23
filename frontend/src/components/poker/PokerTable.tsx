@@ -34,6 +34,9 @@ interface PokerTableProps {
   myHoleCards?: [number, number] | null;
   isProving?: boolean;
   provingProgress?: number;
+  isHost?: boolean;
+  onFillWithBots?: () => void;
+  fillingBots?: boolean;
 }
 
 export default function PokerTable({
@@ -49,6 +52,9 @@ export default function PokerTable({
   myHoleCards,
   isProving,
   provingProgress,
+  isHost,
+  onFillWithBots,
+  fillingBots,
 }: PokerTableProps) {
   const localSeat = seats.find((s) => s.isOccupied && s.player === localPlayerAddress);
   const localPlayerHand = playerHands.find(
@@ -222,6 +228,18 @@ export default function PokerTable({
         {localSeat?.isReady && table.state === "Waiting" && (
           <div className="py-3 text-center font-retro-display text-[9px] text-slate-400">
             WAITING FOR OTHER PLAYERS...
+          </div>
+        )}
+
+        {isHost && table.state === "Waiting" && localSeat && onFillWithBots && (
+          <div className="mt-2 flex justify-center">
+            <button
+              onClick={onFillWithBots}
+              disabled={fillingBots}
+              className="bg-purple-700 px-6 py-2 font-retro-display text-[9px] text-white pixel-border-sm transition-colors hover:bg-purple-600 disabled:opacity-50"
+            >
+              {fillingBots ? "SPAWNING BOTS..." : "FILL WITH BOTS"}
+            </button>
           </div>
         )}
       </div>
