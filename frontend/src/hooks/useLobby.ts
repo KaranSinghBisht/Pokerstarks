@@ -176,24 +176,25 @@ export function useLobby(): UseLobbyReturn {
       }
       try {
         setError(null);
+        const calldata: (string | number | bigint)[] = [
+          params.maxPlayers,
+          params.smallBlind,
+          params.bigBlind,
+          params.minBuyIn,
+          params.maxBuyIn,
+          shuffleVerifier,
+          decryptVerifier,
+          params.rakeBps ?? 0,
+          params.rakeCap ?? 0n,
+          params.rakeRecipient ?? "0x0",
+          params.isPrivate ? 1 : 0,
+          params.inviteCodeHash ?? "0",
+          params.tokenAddress ?? "0x0",
+        ];
         await account.execute({
           contractAddress,
           entrypoint: "create_table",
-          calldata: CallData.compile([
-            String(params.maxPlayers),
-            String(params.smallBlind),
-            String(params.bigBlind),
-            String(params.minBuyIn),
-            String(params.maxBuyIn),
-            shuffleVerifier,
-            decryptVerifier,
-            String(params.rakeBps ?? 0),
-            String(params.rakeCap ?? 0),
-            params.rakeRecipient ?? "0x0",
-            params.isPrivate ? "1" : "0",
-            params.inviteCodeHash ?? "0",
-            params.tokenAddress ?? "0x0",
-          ]),
+          calldata: CallData.compile(calldata.map(String)),
         });
         await loadTables();
       } catch (err) {
