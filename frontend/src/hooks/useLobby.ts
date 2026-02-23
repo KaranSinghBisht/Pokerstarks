@@ -7,6 +7,7 @@ import type { TableData } from "@/lib/types";
 import { WORLD_ADDRESS, TORII_URL, NAMESPACE } from "@/lib/dojo-config";
 import { useStarknet } from "@/providers/StarknetProvider";
 import { getSystemAddress } from "@/lib/contracts";
+import { CHIP_TOKEN_ADDRESS } from "@/lib/constants";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DojoSchema = any;
@@ -189,7 +190,7 @@ export function useLobby(): UseLobbyReturn {
           params.rakeRecipient ?? "0x0",
           params.isPrivate ? 1 : 0,
           params.inviteCodeHash ?? "0",
-          params.tokenAddress ?? "0x0",
+          params.tokenAddress ?? (CHIP_TOKEN_ADDRESS || "0x0"),
         ];
         await account.execute({
           contractAddress,

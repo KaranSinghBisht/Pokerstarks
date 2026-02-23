@@ -94,7 +94,7 @@ export default function PlayerSeat({
         <span className="block font-retro-display text-[8px] text-white/85">
           {isLocalPlayer ? "YOU" : shortAddr}
         </span>
-        <span className="font-retro-display text-[9px] text-white">{chips}</span>
+        <span className="font-retro-display text-[9px] text-white">{chips} CHIP</span>
       </div>
 
       {isCurrentTurn && (

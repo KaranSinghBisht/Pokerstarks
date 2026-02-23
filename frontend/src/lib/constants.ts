@@ -7,6 +7,10 @@ export const STRK_TOKEN_ADDRESS =
   process.env.NEXT_PUBLIC_STRK_TOKEN_ADDRESS ||
   "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 
+// ─── CHIP Token (ERC20, decimals=0) ───
+export const CHIP_TOKEN_ADDRESS =
+  process.env.NEXT_PUBLIC_CHIP_TOKEN_ADDRESS || "";
+
 // Tongo STRK rate: 1 Tongo unit = rate wei of STRK
 // For Sepolia STRK instance: rate = 5e16, so 1 Tongo unit = 0.05 STRK
 export const TONGO_STRK_RATE = 50000000000000000n;

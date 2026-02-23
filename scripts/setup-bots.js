@@ -29,13 +29,17 @@ const {
 
 // ─── Config ───
 
-const RPC_URL = "https://api.cartridge.gg/x/starknet/sepolia";
+const RPC_URL = process.env.RPC_URL || "https://api.cartridge.gg/x/starknet/sepolia";
 
-// Deployer account (funds the bots)
-const DEPLOYER_PRIVATE_KEY =
-  "0x009b2a942b12b2ece01f4f50f548904de648f7ff0da9e50676c07225e844ed9a";
-const DEPLOYER_ADDRESS =
-  "0x0311def628d901545cae8eb76dd34b8e45a3bb1ba4cd4edd7bf8675b8c3d54d4";
+// Deployer account (funds the bots) — read from env vars, never commit keys
+const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
+const DEPLOYER_ADDRESS = process.env.DEPLOYER_ADDRESS;
+
+if (!DEPLOYER_PRIVATE_KEY || !DEPLOYER_ADDRESS) {
+  console.error("Error: DEPLOYER_PRIVATE_KEY and DEPLOYER_ADDRESS env vars are required.");
+  console.error("Usage: DEPLOYER_PRIVATE_KEY=0x... DEPLOYER_ADDRESS=0x... node scripts/setup-bots.js");
+  process.exit(1);
+}
 
 // OpenZeppelin Account class hash on Sepolia
 // This is the standard OZ Account v0.14.0 class hash

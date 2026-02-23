@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { AccountInterface, CallData } from "starknet";
-import { PlayerAction } from "@/lib/constants";
+import { PlayerAction, CHIP_TOKEN_ADDRESS } from "@/lib/constants";
 import { getSystemAddress } from "@/lib/contracts";
 
 // Helper: execute a Dojo system call via starknet.js
@@ -58,8 +58,34 @@ export function usePokerActions(
   }, [tableId, account, contracts.lobby]);
 
   const joinTable = useCallback(
-    async (seatIndex: number, buyIn: bigint, inviteCode: string = "0") => {
-      await executeCall(account ?? null, contracts.lobby, "join_table", [
+    async (seatIndex: number, buyIn: bigint, inviteCode: string = "0", tokenAddress?: string) => {
+      // Use the table's explicit token; only fall back to global CHIP_TOKEN_ADDRESS
+      // when no token address was provided at all (undefined).
+      const resolvedToken = tokenAddress !== undefined ? tokenAddress : CHIP_TOKEN_ADDRESS;
+      const lobbyAddr = contracts.lobby;
+      if (!account) throw new Error("Wallet not connected.");
+      if (!lobbyAddr) throw new Error("Missing contract address for join_table.");
+
+      // If a real token is configured, multicall: approve + join_table
+      if (resolvedToken && resolvedToken !== "0x0") {
+        const result = await account.execute([
+          {
+            contractAddress: resolvedToken,
+            entrypoint: "approve",
+            calldata: CallData.compile([lobbyAddr, buyIn, 0].map(String)),
+          },
+          {
+            contractAddress: lobbyAddr,
+            entrypoint: "join_table",
+            calldata: CallData.compile([tableId, buyIn, seatIndex, inviteCode].map(String)),
+          },
+        ]);
+        console.log(`TX: approve+join_table -> ${result.transaction_hash}`);
+        return result;
+      }
+
+      // Fallback: plain join (play money)
+      await executeCall(account, lobbyAddr, "join_table", [
         tableId,
         buyIn,
         seatIndex,

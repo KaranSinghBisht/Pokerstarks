@@ -21,6 +21,7 @@ export interface TableData {
   currentHandId: number;
   dealerSeat: number;
   playerCount: number;
+  tokenAddress: string;
 }
 
 export interface SeatData {
@@ -184,6 +185,7 @@ function parseTable(models: Record<string, unknown>): TableData | null {
     currentHandId: asNum(t.current_hand_id),
     dealerSeat: asNum(t.dealer_seat),
     playerCount: asNum(t.player_count),
+    tokenAddress: String(t.token_address ?? "0x0"),
   };
 }
 

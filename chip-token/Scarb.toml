@@ -1,0 +1,16 @@
+[package]
+name = "chip_token"
+version = "0.1.0"
+edition = "2024_07"
+
+[dependencies]
+starknet = "2.14.0"
+openzeppelin_token = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v1.0.0" }
+openzeppelin_access = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v1.0.0" }
+
+[cairo]
+sierra-replace-ids = false
+
+[[target.starknet-contract]]
+casm = true
+casm-add-pythonic-hints = true

@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStarknet } from "@/providers/StarknetProvider";
 import { useLobby } from "@/hooks/useLobby";
 import { useTongo } from "@/hooks/useTongo";
+import { useChipToken } from "@/hooks/useChipToken";
 import TongoWallet from "@/components/poker/TongoWallet";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 
@@ -40,7 +41,9 @@ export default function LobbyPage() {
   } = useStarknet();
   const { tables, loading, error: lobbyError, createTable, refresh } = useLobby();
   const tongo = useTongo(address, account);
+  const chip = useChipToken(address, account);
   const [showTongoWallet, setShowTongoWallet] = useState(false);
+  const autoClaimedRef = useRef(false);
 
   const [showCreate, setShowCreate] = useState(false);
   const [creatingSolo, setCreatingSolo] = useState(false);
@@ -52,6 +55,26 @@ export default function LobbyPage() {
     minBuyIn: "100",
     maxBuyIn: "1000",
   });
+
+  // Reset auto-claim flag when wallet address changes (disconnect/reconnect)
+  useEffect(() => {
+    autoClaimedRef.current = false;
+  }, [address]);
+
+  // Auto-claim faucet on first connect if CHIP balance is 0
+  useEffect(() => {
+    if (
+      chip.isConfigured &&
+      isConnected &&
+      chip.balance === 0n &&
+      !chip.loading &&
+      !chip.claiming &&
+      !autoClaimedRef.current
+    ) {
+      autoClaimedRef.current = true;
+      chip.claimFaucet();
+    }
+  }, [chip.isConfigured, isConnected, chip.balance, chip.loading, chip.claiming, chip.claimFaucet]);
 
   const walletLabel = useMemo(() => {
     if (!address) return "NOT CONNECTED";
@@ -149,6 +172,29 @@ export default function LobbyPage() {
               <span className="font-retro-display text-[10px]">{walletLabel}</span>
             </div>
           </div>
+          {isConnected && chip.isConfigured && (
+            <div className="flex items-center gap-2">
+              <div className="px-3 py-2 font-retro-display text-[10px] brand-panel">
+                <span className="text-slate-400">CHIP: </span>
+                <span className="text-[var(--accent)]">
+                  {chip.balance !== null ? Number(chip.balance).toLocaleString() : "..."}
+                </span>
+              </div>
+              {chip.balance === 0n && !chip.claiming && (
+                <button
+                  onClick={() => chip.claimFaucet()}
+                  className="px-3 py-2 font-retro-display text-[10px] brand-btn-cyan animate-pulse"
+                >
+                  CLAIM CHIPS
+                </button>
+              )}
+              {chip.claiming && (
+                <span className="px-3 py-2 font-retro-display text-[10px] text-slate-400">
+                  CLAIMING...
+                </span>
+              )}
+            </div>
+          )}
           {isConnected && (
             <button
               onClick={() => setShowTongoWallet((v) => !v)}

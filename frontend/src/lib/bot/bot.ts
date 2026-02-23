@@ -204,11 +204,22 @@ export class PokerBot {
       log.action(
         `Joining table ${this.config.tableId} at seat ${this.config.seatIndex} with ${buyIn} chips`,
       );
-      await this.chain.joinTable(
-        this.config.tableId,
-        buyIn,
-        this.config.seatIndex,
-      );
+
+      // Use approve+join multicall if table uses an ERC20 token
+      if (table.tokenAddress && table.tokenAddress !== "0x0") {
+        await this.chain.approveAndJoinTable(
+          this.config.tableId,
+          buyIn,
+          this.config.seatIndex,
+          table.tokenAddress,
+        );
+      } else {
+        await this.chain.joinTable(
+          this.config.tableId,
+          buyIn,
+          this.config.seatIndex,
+        );
+      }
       return;
     }
 

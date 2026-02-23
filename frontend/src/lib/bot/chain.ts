@@ -54,6 +54,33 @@ export class BotChain {
     ]);
   }
 
+  /** Approve ERC20 token + join table in a single multicall */
+  async approveAndJoinTable(
+    tableId: number,
+    buyIn: bigint,
+    seatIndex: number,
+    tokenAddress: string,
+  ) {
+    const lobbyAddress = SYSTEM_CONTRACTS.lobby;
+    if (!lobbyAddress) {
+      throw new Error("Missing contract address for system: lobby");
+    }
+    const result = await this.account.execute([
+      {
+        contractAddress: tokenAddress,
+        entrypoint: "approve",
+        calldata: CallData.compile([lobbyAddress, buyIn, 0].map(String)),
+      },
+      {
+        contractAddress: lobbyAddress,
+        entrypoint: "join_table",
+        calldata: CallData.compile([tableId, buyIn, seatIndex, "0"].map(String)),
+      },
+    ]);
+    log.tx("approve+join_table", result.transaction_hash);
+    return result;
+  }
+
   async setReady(tableId: number) {
     return this.execute("lobby", "set_ready", [tableId]);
   }

@@ -9,6 +9,7 @@ import TongoWallet from "@/components/poker/TongoWallet";
 import { useGameOrchestrator } from "@/hooks/useGameOrchestrator";
 import { useStarknet } from "@/providers/StarknetProvider";
 import { useTongo } from "@/hooks/useTongo";
+import { useChipToken } from "@/hooks/useChipToken";
 import { PlayerAction } from "@/lib/constants";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 
@@ -19,6 +20,7 @@ export default function TablePage() {
   const tableId = Number(params.id);
   const { address, account, isConnected, connect, error: walletError } = useStarknet();
   const tongo = useTongo(address, account);
+  const chip = useChipToken(address, account);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const {
@@ -85,7 +87,7 @@ export default function TablePage() {
 
     if (step === "join" && !localSeat && table.state === "Waiting") {
       soloStepRef.current = "fill"; // advance immediately to avoid re-trigger
-      actions.joinTable(0, table.minBuyIn).catch((err) => {
+      actions.joinTable(0, table.minBuyIn, "0", table.tokenAddress).catch((err) => {
         setActionError(err instanceof Error ? err.message : "Solo join failed.");
         soloStepRef.current = "done";
       });
@@ -147,11 +149,11 @@ export default function TablePage() {
   const handleJoin = useCallback(
     (seatIndex: number, buyIn: bigint) => {
       setActionError(null);
-      actions.joinTable(seatIndex, buyIn).catch((err) => {
+      actions.joinTable(seatIndex, buyIn, "0", table?.tokenAddress).catch((err) => {
         setActionError(err instanceof Error ? err.message : "Join action failed.");
       });
     },
-    [actions],
+    [actions, table?.tokenAddress],
   );
 
   if (loading) {
@@ -196,6 +198,14 @@ export default function TablePage() {
         </div>
 
         <div className="flex items-center gap-3 md:gap-8">
+          {chip.isConfigured && (
+            <div className="text-center brand-panel px-3 py-1">
+              <div className="font-retro-display text-[8px] text-slate-400">MY CHIP</div>
+              <div className="font-retro-display text-sm text-[var(--secondary)] md:text-base">
+                {chip.balance !== null ? Number(chip.balance).toLocaleString() : "..."}
+              </div>
+            </div>
+          )}
           <div className="text-center brand-panel px-3 py-1">
             <div className="font-retro-display text-[8px] text-slate-400">POT SIZE</div>
             <div className="font-retro-display text-sm text-[var(--accent)] md:text-base">

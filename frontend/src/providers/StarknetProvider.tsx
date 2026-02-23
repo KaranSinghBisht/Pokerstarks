@@ -2,11 +2,12 @@
 
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react";
 import type { AccountInterface } from "starknet";
+import { RpcProvider } from "starknet";
 import Controller from "@cartridge/controller";
 import type { SessionPolicies } from "@cartridge/presets";
 import { RPC_URL } from "@/lib/dojo-config";
 import { getSystemAddress } from "@/lib/contracts";
-import { TONGO_STRK_ADDRESS, STRK_TOKEN_ADDRESS } from "@/lib/constants";
+import { TONGO_STRK_ADDRESS, STRK_TOKEN_ADDRESS, CHIP_TOKEN_ADDRESS } from "@/lib/constants";
 
 interface StarknetContextType {
   address: string | null;
@@ -59,6 +60,9 @@ type StarknetRequest =
           calldata?: string[];
         }>;
       };
+    }
+  | {
+      type: "wallet_requestChainId";
     };
 
 interface InjectedWallet {
@@ -195,6 +199,17 @@ const SESSION_POLICIES: SessionPolicies = {
           },
         }
       : {}),
+    // CHIP token (ERC20 for in-game chips)
+    ...(CHIP_TOKEN_ADDRESS
+      ? {
+          [CHIP_TOKEN_ADDRESS]: {
+            methods: [
+              { entrypoint: "approve" },
+              { entrypoint: "transfer" },
+            ],
+          },
+        }
+      : {}),
   },
 };
 
@@ -209,6 +224,25 @@ function getController(): Controller {
     });
   }
   return controllerInstance;
+}
+
+// ─── Chain validation helpers ───
+let cachedExpectedChainId: string | null = null;
+
+async function getExpectedChainId(): Promise<string> {
+  if (cachedExpectedChainId) return cachedExpectedChainId;
+  const provider = new RpcProvider({ nodeUrl: RPC_URL });
+  cachedExpectedChainId = await provider.getChainId();
+  return cachedExpectedChainId;
+}
+
+async function getWalletChainId(wallet: InjectedWallet): Promise<string | null> {
+  try {
+    const result = await wallet.request({ type: "wallet_requestChainId" });
+    return typeof result === "string" ? result : null;
+  } catch {
+    return null;
+  }
 }
 
 function getInjectedWallets(): InjectedWallet[] {
@@ -279,8 +313,11 @@ async function connectInjectedWallet(): Promise<{
   account: AccountInterface;
   address: string;
   username: string | null;
+  chainMismatch?: boolean;
 } | null> {
   const wallets = getInjectedWallets();
+  let anyChainMismatch = false;
+
   for (const wallet of wallets) {
     try {
       let address: string | null = null;
@@ -317,6 +354,26 @@ async function connectInjectedWallet(): Promise<{
       }
 
       if (!address || !account) continue;
+
+      // Validate wallet chain matches app's expected chain
+      if (typeof wallet.request === "function") {
+        try {
+          const [walletChain, expectedChain] = await Promise.all([
+            getWalletChainId(wallet),
+            getExpectedChainId(),
+          ]);
+          if (walletChain && walletChain !== expectedChain) {
+            console.warn(
+              `Wallet ${wallet.name ?? "unknown"} is on chain ${walletChain}, expected ${expectedChain}. Skipping.`,
+            );
+            anyChainMismatch = true;
+            continue;
+          }
+        } catch {
+          // Chain check is best-effort; proceed if it fails
+        }
+      }
+
       return {
         source: "injected",
         account,
@@ -326,6 +383,11 @@ async function connectInjectedWallet(): Promise<{
     } catch {
       // Try next injected wallet.
     }
+  }
+
+  // Return a sentinel so the caller knows a chain mismatch occurred
+  if (anyChainMismatch) {
+    return { source: "injected", account: null as unknown as AccountInterface, address: "", username: null, chainMismatch: true };
   }
 
   return null;
@@ -344,13 +406,15 @@ export function StarknetProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const injected = await connectInjectedWallet();
-      if (injected) {
+      if (injected && !injected.chainMismatch && injected.address) {
         accountRef.current = injected.account;
         sourceRef.current = injected.source;
         setAddress(injected.address);
         setUsername(injected.username);
         return;
       }
+
+      const hadChainMismatch = injected?.chainMismatch === true;
 
       const controller = getController();
       const account = await controller.connect();
@@ -365,6 +429,8 @@ export function StarknetProvider({ children }: { children: ReactNode }) {
         } catch {
           // Username fetch is optional
         }
+      } else if (hadChainMismatch) {
+        setError("Your wallet is on the wrong network. Switch to Sepolia in your wallet settings.");
       } else {
         setError("No wallet connected. Unlock Braavos/ArgentX or try Cartridge again.");
       }

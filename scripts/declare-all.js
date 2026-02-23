@@ -8,9 +8,15 @@ const { RpcProvider, Account, json, hash, CallData } = require('starknet');
 const fs = require('fs');
 const path = require('path');
 
-const RPC_URL = 'https://api.cartridge.gg/x/starknet/sepolia';
-const PRIVATE_KEY = '0x009b2a942b12b2ece01f4f50f548904de648f7ff0da9e50676c07225e844ed9a';
-const ACCOUNT_ADDRESS = '0x0311def628d901545cae8eb76dd34b8e45a3bb1ba4cd4edd7bf8675b8c3d54d4';
+const RPC_URL = process.env.RPC_URL || 'https://api.cartridge.gg/x/starknet/sepolia';
+const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
+const ACCOUNT_ADDRESS = process.env.DEPLOYER_ADDRESS;
+
+if (!PRIVATE_KEY || !ACCOUNT_ADDRESS) {
+  console.error('Error: DEPLOYER_PRIVATE_KEY and DEPLOYER_ADDRESS env vars are required.');
+  console.error('Usage: DEPLOYER_PRIVATE_KEY=0x... DEPLOYER_ADDRESS=0x... node scripts/declare-all.js');
+  process.exit(1);
+}
 
 const SIERRA_DIR = path.join(__dirname, '../contracts/target/sepolia');
 const CASM_DIR = '/tmp/casm_output';
