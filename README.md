@@ -162,12 +162,12 @@ npm install
 npx tsx index.ts \
   --table 1 \
   --seat 1 \
-  --private-key 0x1800000000300000180000000000030000000000003006001800006600 \
-  --address 0x517ececd29116499f4a1b64b094da79ba08dfd54a3edaa316134c41f8160973 \
+  --private-key 0x... \
+  --address 0x... \
   --strategy passive
 ```
 
-The bot auto-reads the world address from `contracts/manifest_dev.json`. The above private key/address are Katana's second pre-funded account.
+The bot auto-reads the world address from `contracts/manifest_dev.json`.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -202,6 +202,9 @@ The bot auto-reads the world address from `contracts/manifest_dev.json`. The abo
 git clone https://github.com/KaranSinghBisht/Pokerstarks.git
 cd Pokerstarks
 
+# Required for contract migration (use your local Katana dev key)
+export DOJO_PRIVATE_KEY=0x...
+
 # One command starts everything:
 ./dev.sh
 
@@ -218,7 +221,7 @@ cd Pokerstarks
 # 1. Build and deploy contracts
 cd contracts
 sozo build
-sozo migrate -P dev
+sozo migrate -P dev --private-key "$DOJO_PRIVATE_KEY"
 
 # 2. Compile ZK circuits (one-time)
 cd ../circuits/shuffle_proof && nargo compile
@@ -236,6 +239,8 @@ bb prove -b circuits/decrypt_proof/target/decrypt_proof.json \
          --oracle_hash keccak --write_vk
 
 # 4. Start Garaga calldata server (requires garaga venv with Python 3.10)
+export GARAGA_HOST=127.0.0.1
+export GARAGA_ALLOWED_ORIGINS=http://localhost:3000
 python scripts/garaga-server.py  # serves on :3001
 
 # 5. Start frontend
@@ -257,6 +262,7 @@ Key variables:
 | `NEXT_PUBLIC_TORII_URL` | `http://localhost:8080` | Torii indexer endpoint |
 | `NEXT_PUBLIC_TORII_RPC_URL` | `http://localhost:5050` | Katana / Starknet RPC |
 | `NEXT_PUBLIC_GARAGA_API_URL` | `http://localhost:3001` | Garaga calldata server |
+| `NEXT_PUBLIC_PERSIST_SESSION_SECRET` | `false` | Persist per-hand secret key in sessionStorage (disabled by default for security) |
 
 ---
 
