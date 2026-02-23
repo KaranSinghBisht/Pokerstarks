@@ -52,6 +52,7 @@ memory.md
 audit-findings.md
 logs/
 *.log
+bot-accounts.json
 
 # Environment
 .env
