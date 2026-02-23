@@ -131,6 +131,22 @@ export function useReveal({
         let completed = 0;
 
         for (const pos of positions) {
+          // S-03 FIX: Skip positions where we already submitted a token on-chain.
+          // Without this check, a page reload causes re-entry into the reveal
+          // loop and duplicate submissions fail, blocking subsequent tokens.
+          const alreadySubmitted = revealTokens.some(
+            (t) =>
+              t.handId === hand.handId &&
+              t.cardPosition === pos &&
+              t.playerSeat === mySeat.seatIndex &&
+              t.proofVerified,
+          );
+          if (alreadySubmitted) {
+            completed++;
+            setRevealProgress(Math.floor((completed / total) * 100));
+            continue;
+          }
+
           const { token, proofInputs } = session.computeRevealTokenForCard(pos);
 
           // Generate decrypt proof
@@ -157,7 +173,7 @@ export function useReveal({
     };
 
     doReveal();
-  }, [hand, session, mySeat, currentDeckData, playerHands, communityCards, isRevealing, submitRevealToken]);
+  }, [hand, session, mySeat, currentDeckData, playerHands, communityCards, isRevealing, submitRevealToken, revealTokens]);
 
   // Decrypt hole cards when we have all tokens for our positions
   useEffect(() => {

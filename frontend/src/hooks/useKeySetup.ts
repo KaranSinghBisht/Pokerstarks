@@ -9,6 +9,14 @@ import { GamePhase } from "@/lib/constants";
 import type { HandData, PlayerHandData, SeatData } from "@/lib/types";
 
 const SESSION_STORAGE_PREFIX = "pokerstarks.session.v1";
+const SESSION_SECRET_PERSISTENCE_ENABLED =
+  process.env.NEXT_PUBLIC_PERSIST_SESSION_SECRET === "true";
+const SESSION_SECRET_TTL_MS = 1000 * 60 * 60 * 2;
+
+interface PersistedSessionSecret {
+  secretKey: string;
+  createdAt: number;
+}
 
 interface UseKeySetupOptions {
   hand: HandData | undefined;
@@ -37,17 +45,82 @@ function persistSessionSecret(
   address: string,
   secretKey: bigint,
 ) {
+  if (!SESSION_SECRET_PERSISTENCE_ENABLED) return;
   if (typeof window === "undefined") return;
-  sessionStorage.setItem(getSessionStorageKey(handId, address), secretKey.toString());
+
+  const payload: PersistedSessionSecret = {
+    secretKey: secretKey.toString(),
+    createdAt: Date.now(),
+  };
+
+  sessionStorage.setItem(
+    getSessionStorageKey(handId, address),
+    JSON.stringify(payload),
+  );
+}
+
+function removeSessionSecret(handId: number, address: string) {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(getSessionStorageKey(handId, address));
+}
+
+function purgeExpiredSessionSecrets(address: string) {
+  if (!SESSION_SECRET_PERSISTENCE_ENABLED) return;
+  if (typeof window === "undefined") return;
+
+  const keyPrefix = `${SESSION_STORAGE_PREFIX}:${address.toLowerCase()}:`;
+  const now = Date.now();
+
+  for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+    const key = sessionStorage.key(i);
+    if (!key || !key.startsWith(keyPrefix)) continue;
+
+    const value = sessionStorage.getItem(key);
+    if (!value) {
+      sessionStorage.removeItem(key);
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(value) as Partial<PersistedSessionSecret>;
+      if (typeof parsed.createdAt !== "number") {
+        sessionStorage.removeItem(key);
+        continue;
+      }
+
+      if (now - parsed.createdAt > SESSION_SECRET_TTL_MS) {
+        sessionStorage.removeItem(key);
+      }
+    } catch {
+      sessionStorage.removeItem(key);
+    }
+  }
 }
 
 function restoreSession(handId: number, address: string): MentalPokerSession | null {
+  if (!SESSION_SECRET_PERSISTENCE_ENABLED) return null;
   if (typeof window === "undefined") return null;
   const raw = sessionStorage.getItem(getSessionStorageKey(handId, address));
   if (!raw) return null;
+
   try {
-    return MentalPokerSession.fromSecretKey(BigInt(raw));
+    const parsed = JSON.parse(raw) as Partial<PersistedSessionSecret>;
+    if (
+      typeof parsed.secretKey !== "string" ||
+      typeof parsed.createdAt !== "number"
+    ) {
+      removeSessionSecret(handId, address);
+      return null;
+    }
+
+    if (Date.now() - parsed.createdAt > SESSION_SECRET_TTL_MS) {
+      removeSessionSecret(handId, address);
+      return null;
+    }
+
+    return MentalPokerSession.fromSecretKey(BigInt(parsed.secretKey));
   } catch {
+    removeSessionSecret(handId, address);
     return null;
   }
 }
@@ -85,6 +158,9 @@ export function useKeySetup({
   // Rehydrate in-memory session from sessionStorage on hand change.
   useEffect(() => {
     if (!hand || !myAddress) return;
+
+    purgeExpiredSessionSecrets(myAddress);
+
     const hydrateKey = `${myAddress.toLowerCase()}:${hand.handId}`;
     if (hydratedSessionRef.current === hydrateKey) return;
     hydratedSessionRef.current = hydrateKey;
@@ -100,7 +176,7 @@ export function useKeySetup({
     setSession(null);
     setKeySubmitted(false);
     setError(null);
-  }, [hand?.handId, myAddress, setSession]);
+  }, [hand, myAddress, setSession]);
 
   // Auto-submit public key when Setup phase starts
   useEffect(() => {
@@ -154,6 +230,23 @@ export function useKeySetup({
     if (hand.phase !== GamePhase.Shuffling) return;
     if (aggKeySubmittedRef.current === hand.handId) return;
 
+    // S-04 FIX: If aggregate key already set on-chain, skip resubmission.
+    if (hand.aggPubKeyX && hand.aggPubKeyX !== "0") {
+      aggKeySubmittedRef.current = hand.handId;
+      // Still set the aggregate key on the local session so shuffle works
+      const keys: Point[] = [];
+      for (const ph of playerHands) {
+        if (ph.player === "" || ph.player === "0x0") continue;
+        if (ph.publicKeyX && ph.publicKeyX !== "0") {
+          keys.push({ x: BigInt(ph.publicKeyX), y: BigInt(ph.publicKeyY) });
+        }
+      }
+      if (keys.length >= hand.numPlayers) {
+        sessionRef.current.setAggregateKey(keys);
+      }
+      return;
+    }
+
     const keys: Point[] = [];
     for (const ph of playerHands) {
       if (ph.player === "" || ph.player === "0x0") continue;
@@ -190,6 +283,12 @@ export function useKeySetup({
     if (deckHashSubmittedRef.current === hand.handId) return;
     if (!hand.deckSeed || hand.deckSeed === "0") return;
 
+    // S-04 FIX: If deck hash already set on-chain, skip resubmission.
+    if (hand.initialDeckHash && hand.initialDeckHash !== "0") {
+      deckHashSubmittedRef.current = hand.handId;
+      return;
+    }
+
     deckHashSubmittedRef.current = hand.handId;
 
     const seed = BigInt(hand.deckSeed);
@@ -210,6 +309,13 @@ export function useKeySetup({
     if (hand.initialDeckHash === "0") return;
     if (deckSubmittedRef.current === hand.handId) return;
     if (!hand.deckSeed || hand.deckSeed === "0") return;
+
+    // S-04 FIX: If shuffle has already started, the initial deck was
+    // already submitted — skip to avoid wasting gas on a revert.
+    if (hand.shuffleProgress > 0) {
+      deckSubmittedRef.current = hand.handId;
+      return;
+    }
 
     deckSubmittedRef.current = hand.handId;
 
