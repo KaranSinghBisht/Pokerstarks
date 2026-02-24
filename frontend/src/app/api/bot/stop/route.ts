@@ -1,16 +1,9 @@
 import { NextResponse } from "next/server";
 import { stopBotsAtTable } from "@/lib/bot/manager";
-
-const BOT_API_SECRET = process.env.BOT_API_SECRET || process.env.NEXT_PUBLIC_BOT_API_SECRET;
-
-function isAuthorized(request: Request): boolean {
-  if (!BOT_API_SECRET) return true;
-  const auth = request.headers.get("authorization");
-  return auth === `Bearer ${BOT_API_SECRET}`;
-}
+import { isAllowedBotRequest } from "@/lib/bot/auth";
 
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
+  if (!isAllowedBotRequest(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

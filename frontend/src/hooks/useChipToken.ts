@@ -97,12 +97,9 @@ export function useChipToken(
     setClaiming(true);
     setError(null);
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      const secret = process.env.NEXT_PUBLIC_BOT_API_SECRET;
-      if (secret) headers["Authorization"] = `Bearer ${secret}`;
       const res = await fetch("/api/chip/faucet", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address }),
       });
       const data = await res.json();

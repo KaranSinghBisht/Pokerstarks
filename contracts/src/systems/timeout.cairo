@@ -10,7 +10,7 @@ pub mod timeout_system {
     use super::ITimeout;
     use crate::models::hand::{Hand, PlayerHand};
     use crate::models::table::{Table, Seat};
-    use crate::models::enums::GamePhase;
+    use crate::models::enums::{GamePhase, TableState};
     use crate::models::card::CommunityCards;
     use crate::utils::constants::CARD_NOT_DEALT;
     use crate::utils::side_pots::{create_side_pots, check_any_all_in};
@@ -24,6 +24,12 @@ pub mod timeout_system {
             assert(get_block_timestamp() > hand.phase_deadline, 'not timed out yet');
 
             let table: Table = world.read_model(hand.table_id);
+
+            // Prevent replay on settled/old hands: the table must still
+            // be active and this must be the current hand.
+            assert(table.state == TableState::InProgress, 'table not active');
+            assert(table.current_hand_id == hand_id, 'not current hand');
+
             let max = table.max_players;
 
             match hand.phase {

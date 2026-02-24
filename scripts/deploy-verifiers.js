@@ -5,6 +5,7 @@
 
 const { RpcProvider, Account, json, hash, CallData, Contract } = require('starknet');
 const fs = require('fs');
+const path = require('path');
 
 const RPC_URL = process.env.RPC_URL || 'https://api.cartridge.gg/x/starknet/sepolia';
 const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
@@ -16,16 +17,18 @@ if (!PRIVATE_KEY || !ACCOUNT_ADDRESS) {
   process.exit(1);
 }
 
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+
 const VERIFIERS = [
   {
     name: 'shuffle_verifier',
-    sierra: '/Users/kryptos/Desktop/Projects/starknet/Pokerstarks/verifiers/shuffle_verifier/target/dev/shuffle_verifier_UltraKeccakZKHonkVerifier.contract_class.json',
-    casm: '/tmp/verifier_casm/shuffle_verifier.compiled_contract_class.json',
+    sierra: path.join(PROJECT_ROOT, 'verifiers/shuffle_verifier/target/dev/shuffle_verifier_UltraKeccakZKHonkVerifier.contract_class.json'),
+    casm: path.join(PROJECT_ROOT, 'verifiers/shuffle_verifier/target/dev/shuffle_verifier_UltraKeccakZKHonkVerifier.compiled_contract_class.json'),
   },
   {
     name: 'decrypt_verifier',
-    sierra: '/Users/kryptos/Desktop/Projects/starknet/Pokerstarks/verifiers/decrypt_verifier/target/dev/decrypt_verifier_UltraKeccakZKHonkVerifier.contract_class.json',
-    casm: '/tmp/verifier_casm/decrypt_verifier.compiled_contract_class.json',
+    sierra: path.join(PROJECT_ROOT, 'verifiers/decrypt_verifier/target/dev/decrypt_verifier_UltraKeccakZKHonkVerifier.contract_class.json'),
+    casm: path.join(PROJECT_ROOT, 'verifiers/decrypt_verifier/target/dev/decrypt_verifier_UltraKeccakZKHonkVerifier.compiled_contract_class.json'),
   },
 ];
 

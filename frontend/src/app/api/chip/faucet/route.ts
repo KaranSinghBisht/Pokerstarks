@@ -10,11 +10,6 @@ const CHIP_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_CHIP_TOKEN_ADDRESS || "";
 const DEPLOYER_PRIVATE_KEY = process.env.CHIP_DEPLOYER_PRIVATE_KEY || "";
 const DEPLOYER_ADDRESS = process.env.CHIP_DEPLOYER_ADDRESS || "";
 
-// Auth: reuse the same BOT_API_SECRET used by /api/bot/* routes.
-// Client sends NEXT_PUBLIC_BOT_API_SECRET; server checks BOT_API_SECRET.
-const BOT_API_SECRET =
-  process.env.BOT_API_SECRET || process.env.NEXT_PUBLIC_BOT_API_SECRET || "";
-
 const FAUCET_AMOUNT = 10_000; // 10k CHIP per claim
 const RATE_LIMIT_MS = 60 * 60 * 1000; // 1 hour per address
 const GLOBAL_RATE_LIMIT_MS = 2_000; // 2s between any claims (anti-burst)
@@ -35,12 +30,6 @@ function evictIfNeeded() {
   }
 }
 
-function isAuthorized(request: Request): boolean {
-  if (!BOT_API_SECRET) return true; // No secret → open (dev mode)
-  const auth = request.headers.get("authorization");
-  return auth === `Bearer ${BOT_API_SECRET}`;
-}
-
 function getDeployerAccount(): Account {
   if (!DEPLOYER_PRIVATE_KEY || !DEPLOYER_ADDRESS) {
     throw new Error("Faucet deployer credentials not configured");
@@ -55,10 +44,6 @@ export async function POST(request: Request) {
       { error: "CHIP token not configured" },
       { status: 503 },
     );
-  }
-
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let body: { address?: string };
@@ -104,6 +89,12 @@ export async function POST(request: Request) {
     );
   }
 
+  // Lock rate limit BEFORE the async transfer to prevent concurrent bypass.
+  // If transfer fails, we roll back.
+  claimHistory.set(normalizedAddr, now);
+  lastGlobalClaim = now;
+  evictIfNeeded();
+
   try {
     const deployer = getDeployerAccount();
 
@@ -114,17 +105,14 @@ export async function POST(request: Request) {
       calldata: CallData.compile([recipientAddress, FAUCET_AMOUNT, 0]), // u256 = (low, high)
     });
 
-    // Record the claim time
-    claimHistory.set(normalizedAddr, now);
-    lastGlobalClaim = now;
-    evictIfNeeded();
-
     return NextResponse.json({
       success: true,
       amount: FAUCET_AMOUNT,
       transactionHash: tx.transaction_hash,
     });
   } catch (err) {
+    // Roll back rate limit on failure so the user can retry
+    claimHistory.delete(normalizedAddr);
     console.error("Faucet transfer error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Transfer failed" },

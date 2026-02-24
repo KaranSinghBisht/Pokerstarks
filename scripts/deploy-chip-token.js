@@ -26,13 +26,22 @@ if (!PRIVATE_KEY || !ACCOUNT_ADDRESS) {
   process.exit(1);
 }
 
-// Bot accounts (from frontend/.env.local)
-const BOT_ACCOUNTS = [
-  '0x44d726924d5aeadc0461261fc4b3d0f8f797ad3cf76ad961621efad38bc83b9',
-  '0x5d1c5148542a23e8cea75fa6e1d587c81924e988e3817bcd983e8dd580edc5b',
-  '0x65cc94e44aa2206a3462c36c3524fe39e78db0a010382d286f7d9264b41cf40',
-  '0x370d99cd20bc546e427cb2cf5cf5a6a5b7b044febc3907da6f68431e001509e',
-];
+// Bot accounts from env vars (BOT_ADDRESS_1..4) or BOT_ADDRESSES (comma-separated)
+function loadBotAccounts() {
+  if (process.env.BOT_ADDRESSES) {
+    return process.env.BOT_ADDRESSES.split(',').map(a => a.trim()).filter(Boolean);
+  }
+  const accounts = [];
+  for (let i = 1; i <= 4; i++) {
+    const addr = process.env[`BOT_ADDRESS_${i}`];
+    if (addr) accounts.push(addr);
+  }
+  if (accounts.length === 0) {
+    console.warn('Warning: No BOT_ADDRESS_* or BOT_ADDRESSES env vars set. Skipping bot minting.');
+  }
+  return accounts;
+}
+const BOT_ACCOUNTS = loadBotAccounts();
 
 const BOT_MINT_AMOUNT = 100_000; // 100k CHIP each
 

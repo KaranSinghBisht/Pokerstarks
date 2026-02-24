@@ -50,12 +50,9 @@ export default function TablePage() {
     setFillingBots(true);
     setActionError(null);
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      const secret = process.env.NEXT_PUBLIC_BOT_API_SECRET;
-      if (secret) headers["Authorization"] = `Bearer ${secret}`;
       const res = await fetch("/api/bot/fill", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tableId: table.tableId }),
       });
       const data = await res.json();
@@ -97,12 +94,9 @@ export default function TablePage() {
     if ((step === "join" || step === "fill") && localSeat && table.state === "Waiting") {
       soloStepRef.current = "ready"; // advance
       setFillingBots(true);
-      const soloHeaders: Record<string, string> = { "Content-Type": "application/json" };
-      const soloSecret = process.env.NEXT_PUBLIC_BOT_API_SECRET;
-      if (soloSecret) soloHeaders["Authorization"] = `Bearer ${soloSecret}`;
       fetch("/api/bot/fill", {
         method: "POST",
-        headers: soloHeaders,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tableId: table.tableId }),
       })
         .then((r) => r.json())

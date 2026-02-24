@@ -82,7 +82,7 @@ interface UseLobbyReturn {
       maxBuyIn: bigint;
     },
   ) => Promise<void>;
-  refresh: () => void;
+  refresh: () => Promise<TableData[]>;
 }
 
 export function useLobby(): UseLobbyReturn {
@@ -92,7 +92,7 @@ export function useLobby(): UseLobbyReturn {
   const { account } = useStarknet();
   const sdkRef = useRef<Awaited<ReturnType<typeof init<DojoSchema>>> | null>(null);
 
-  const loadTables = useCallback(async () => {
+  const loadTables = useCallback(async (): Promise<TableData[]> => {
     try {
       if (!WORLD_ADDRESS || WORLD_ADDRESS === "0x0") {
         throw new Error("NEXT_PUBLIC_WORLD_ADDRESS is not configured.");
@@ -132,10 +132,12 @@ export function useLobby(): UseLobbyReturn {
       setTables(parsed);
       setError(null);
       setLoading(false);
+      return parsed;
     } catch (err) {
       setTables([]);
       setError(err instanceof Error ? err.message : "Failed to load tables.");
       setLoading(false);
+      return [];
     }
   }, []);
 

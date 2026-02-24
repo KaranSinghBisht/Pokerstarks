@@ -111,11 +111,8 @@ export default function LobbyPage() {
       setCreateError(null);
       setCreatingSolo(true);
 
-      // Note current highest table ID to detect the new one
-      const prevMaxId = tables.reduce(
-        (max, t) => Math.max(max, t.tableId),
-        0,
-      );
+      // Snapshot IDs that exist before creation
+      const existingIds = new Set(tables.map((t) => t.tableId));
 
       // Create table with sensible defaults
       await createTable({
@@ -126,20 +123,29 @@ export default function LobbyPage() {
         maxBuyIn: 1000n,
       });
 
-      // Refresh and find the newly created table
-      refresh();
-      // Small delay to let Torii index the new table
-      await new Promise((r) => setTimeout(r, 2000));
-      refresh();
-      // Wait a tick for state to update, then find from DOM-fresh tables
-      await new Promise((r) => setTimeout(r, 500));
+      // Poll for the newly created table by matching creator address.
+      // refresh() returns the fresh table list directly, avoiding stale closure issues.
+      let newTableId: number | null = null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        await new Promise((r) => setTimeout(r, 1200));
+        const freshTables = await refresh();
+        const match = freshTables.find(
+          (t) =>
+            !existingIds.has(t.tableId) &&
+            t.creator.toLowerCase() === address.toLowerCase(),
+        );
+        if (match) {
+          newTableId = match.tableId;
+          break;
+        }
+      }
 
-      // Re-fetch tables directly to get the latest
-      // The refresh() above updates state asynchronously, so we
-      // navigate based on prevMaxId + 1 as a reasonable guess.
-      // The table page will handle the solo flow regardless.
-      const newTableId = prevMaxId + 1;
-      router.push(`/table/${newTableId}?solo=true`);
+      if (newTableId) {
+        router.push(`/table/${newTableId}?solo=true`);
+      } else {
+        // Fallback: navigate to lobby and let user pick
+        setCreateError("Table created but couldn't detect it. Check the lobby.");
+      }
     } catch (err) {
       setCreateError(
         err instanceof Error ? err.message : "Solo game creation failed.",
