@@ -3,17 +3,24 @@ pub trait ITimeout<T> {
     fn enforce_timeout(ref self: T, hand_id: u64);
 }
 
+#[starknet::interface]
+pub trait IERC20<T> {
+    fn transfer(ref self: T, recipient: starknet::ContractAddress, amount: u256) -> bool;
+}
+
 #[dojo::contract]
 pub mod timeout_system {
     use dojo::model::ModelStorage;
     use starknet::get_block_timestamp;
-    use super::ITimeout;
+    use super::{ITimeout, IERC20Dispatcher, IERC20DispatcherTrait};
     use crate::models::hand::{Hand, PlayerHand};
     use crate::models::table::{Table, Seat};
     use crate::models::enums::{GamePhase, TableState};
     use crate::models::card::CommunityCards;
     use crate::utils::constants::CARD_NOT_DEALT;
     use crate::utils::side_pots::{create_side_pots, check_any_all_in};
+
+    const ZERO_ADDR: felt252 = 0;
 
     #[abi(embed_v0)]
     impl TimeoutImpl of ITimeout<ContractState> {
@@ -64,10 +71,10 @@ pub mod timeout_system {
                             hand.active_players -= 1;
                         }
 
-                        // Mark their seat as sitting out
-                        let mut seat: Seat = world.read_model((hand.table_id, timed_out_seat));
-                        seat.is_sitting_out = true;
-                        world.write_model(@seat);
+                        // P1 FIX: Do NOT set is_sitting_out here. The player is already
+                        // folded (has_folded=true), which excludes them from future game
+                        // actions. Setting is_sitting_out causes find_nth_occupied_seat to
+                        // skip the NEXT legitimate shuffler (index drift).
                     }
 
                     if hand.active_players <= 1 {
@@ -257,6 +264,26 @@ pub mod timeout_system {
                 GamePhase::Settling => {
                     // F-02 FIX: proportional refund instead of first-seat-wins
                     if hand.pot > 0 {
+                        // P1 FIX: Deduct rake before distribution (mirrors settle.cairo)
+                        if table.rake_bps > 0 {
+                            let rake_amount = hand.pot * table.rake_bps.into() / 10000;
+                            let rake = if rake_amount > table.rake_cap {
+                                table.rake_cap
+                            } else {
+                                rake_amount
+                            };
+                            hand.pot -= rake;
+
+                            if table.token_address != ZERO_ADDR.try_into().unwrap()
+                                && table.rake_recipient != ZERO_ADDR.try_into().unwrap() {
+                                let token = IERC20Dispatcher {
+                                    contract_address: table.token_address,
+                                };
+                                let success = token.transfer(table.rake_recipient, rake.into());
+                                assert(success, 'rake transfer failed');
+                            }
+                        }
+
                         let mut non_folded_count: u8 = 0;
                         let mut total_nf_bet: u128 = 0;
                         let mut ci: u8 = 0;

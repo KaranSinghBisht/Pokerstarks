@@ -45,12 +45,14 @@ pub mod dealing_system {
             let caller = get_caller_address();
 
             let mut hand: Hand = world.read_model(hand_id);
+            // P0 FIX: Allow Showdown phase so owner can submit own hole card tokens
             assert(
                 hand.phase == GamePhase::DealingPreflop
                     || hand.phase == GamePhase::DealingFlop
                     || hand.phase == GamePhase::DealingTurn
-                    || hand.phase == GamePhase::DealingRiver,
-                'not dealing phase',
+                    || hand.phase == GamePhase::DealingRiver
+                    || hand.phase == GamePhase::Showdown,
+                'not dealing/showdown phase',
             );
 
             // Find caller's seat
@@ -174,7 +176,8 @@ pub mod dealing_system {
                     ref world, hand_id, hand.phase, hand.num_players, table.max_players,
                 );
 
-                if phase_complete {
+                // P0 FIX: During Showdown, just store the token — don't advance phases
+                if phase_complete && hand.phase != GamePhase::Showdown {
                     // Advance to the next phase
                     let next_phase = match hand.phase {
                         GamePhase::DealingPreflop => GamePhase::BettingPreflop,

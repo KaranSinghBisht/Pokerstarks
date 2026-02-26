@@ -106,31 +106,21 @@ pub mod showdown_system {
                 || card_position == comm.turn_pos
                 || card_position == comm.river_pos;
 
-            if !is_community {
-                // Hole card: verify the voter is the card owner
-                assert(
-                    ph.hole_card_1_pos == card_position
-                        || ph.hole_card_2_pos == card_position,
-                    'not card owner',
-                );
-            }
+            // P0 FIX: ALL active players vote on ALL cards (community AND hole cards).
+            // Previously hole cards only required the owner's vote, which was trivially
+            // forgeable since no cryptographic proof bound the claimed card_id.
 
-            let required_votes: u8 = if is_community { active_count } else { 1 };
+            let required_votes: u8 = active_count;
 
             if vote_count >= required_votes {
-                let first_card_id = if is_community {
-                    // Community: majority vote among all active players
-                    let (majority_id, majority_count) = find_majority_vote(
-                        ref world, hand_id, card_position, table.max_players,
-                    );
-                    if majority_count * 2 <= active_count {
-                        return;
-                    }
-                    majority_id
-                } else {
-                    // Hole card: owner's single vote is authoritative
-                    card_id
-                };
+                // P0 FIX: Both community and hole cards use majority vote consensus.
+                let (majority_id, majority_count) = find_majority_vote(
+                    ref world, hand_id, card_position, table.max_players,
+                );
+                if majority_count * 2 <= active_count {
+                    return;
+                }
+                let first_card_id = majority_id;
 
                 if is_community {
                     if card_position == comm.flop_1_pos {
@@ -155,16 +145,21 @@ pub mod showdown_system {
                         world.write_model(@c);
                     }
                 } else {
-                    // Hole card: store on the owner's PlayerHand
-                    let mut owner_ph: PlayerHand = world.read_model((hand_id, seat_idx));
-                    if owner_ph.hole_card_1_pos == card_position
-                        && owner_ph.hole_card_1_id == CARD_NOT_DEALT {
-                        owner_ph.hole_card_1_id = first_card_id;
-                        world.write_model(@owner_ph);
-                    } else if owner_ph.hole_card_2_pos == card_position
-                        && owner_ph.hole_card_2_id == CARD_NOT_DEALT {
-                        owner_ph.hole_card_2_id = first_card_id;
-                        world.write_model(@owner_ph);
+                    // P0 FIX: Hole card — find the actual owner (not the voter)
+                    let owner_seat = find_hole_card_owner(
+                        ref world, hand_id, card_position, table.max_players,
+                    );
+                    if owner_seat != 255 {
+                        let mut owner_ph: PlayerHand = world.read_model((hand_id, owner_seat));
+                        if owner_ph.hole_card_1_pos == card_position
+                            && owner_ph.hole_card_1_id == CARD_NOT_DEALT {
+                            owner_ph.hole_card_1_id = first_card_id;
+                            world.write_model(@owner_ph);
+                        } else if owner_ph.hole_card_2_pos == card_position
+                            && owner_ph.hole_card_2_id == CARD_NOT_DEALT {
+                            owner_ph.hole_card_2_id = first_card_id;
+                            world.write_model(@owner_ph);
+                        }
                     }
                 }
             }
@@ -571,27 +566,37 @@ pub mod showdown_system {
         (best_id, best_count)
     }
 
-    /// A-05 FIX: Use num_players (n-of-n) instead of active_players for token requirements.
+    /// P0 FIX: ALL cards (community AND hole) require tokens from ALL N players.
+    /// During Showdown, the owner submits their own reveal token for their hole cards,
+    /// so all N tokens exist on-chain for cryptographic verification.
     fn get_required_tokens_for_card(
         ref world: dojo::world::WorldStorage,
         hand_id: u64,
-        card_position: u8,
+        _card_position: u8,
         _max_players: u8,
     ) -> u8 {
         let hand: Hand = world.read_model(hand_id);
-        let comm: CommunityCards = world.read_model(hand_id);
+        hand.num_players
+    }
 
-        // Community cards need tokens from ALL original players
-        if card_position == comm.flop_1_pos
-            || card_position == comm.flop_2_pos
-            || card_position == comm.flop_3_pos
-            || card_position == comm.turn_pos
-            || card_position == comm.river_pos {
-            return hand.num_players;
-        }
-
-        // Hole cards need tokens from (num_players - 1) players
-        if hand.num_players > 0 { hand.num_players - 1 } else { 0 }
+    /// Find the seat index of the player who owns a given hole card position.
+    fn find_hole_card_owner(
+        ref world: dojo::world::WorldStorage,
+        hand_id: u64,
+        card_position: u8,
+        max_players: u8,
+    ) -> u8 {
+        let mut i: u8 = 0;
+        while i < max_players {
+            let ph: PlayerHand = world.read_model((hand_id, i));
+            if ph.player != 0.try_into().unwrap()
+                && (ph.hole_card_1_pos == card_position
+                    || ph.hole_card_2_pos == card_position) {
+                return i;
+            }
+            i += 1;
+        };
+        255
     }
 
     #[generate_trait]
