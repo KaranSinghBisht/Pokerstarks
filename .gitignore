@@ -12,6 +12,7 @@ circuits/*/Prover.toml
 # Garaga verifiers build artifacts
 verifiers/*/target/
 verifiers/*/.tool-versions
+verifiers/*/.snfoundry_cache/
 
 # Python
 __pycache__/
@@ -53,6 +54,16 @@ audit-findings.md
 logs/
 *.log
 bot-accounts.json
+
+# Starkli wallets (private keys)
+.starkli-wallets/
+
+# CHIP token build artifacts
+chip-token/target/
+chip-token/Scarb.lock
+
+# Contracts build cache (misplaced .next)
+contracts/.next/
 
 # Environment
 .env

@@ -76,6 +76,20 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM EXIT
 
+# Helper: update or append a key=value in .env.local (used by both modes)
+update_env() {
+    local key="$1" val="$2" file="$3"
+    if grep -q "^${key}=" "$file"; then
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|^${key}=.*|${key}=${val}|" "$file"
+        else
+            sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+        fi
+    else
+        echo "${key}=${val}" >> "$file"
+    fi
+}
+
 echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║           ♠ STARK POKER — Dev Environment ♠          ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
@@ -231,20 +245,6 @@ if [ "$MODE" = "local" ]; then
         cp "$ROOT_DIR/frontend/.env.example" "$ENV_FILE"
     fi
 
-    # Helper: update or append a key=value in .env.local
-    update_env() {
-        local key="$1" val="$2" file="$3"
-        if grep -q "^${key}=" "$file"; then
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                sed -i '' "s|^${key}=.*|${key}=${val}|" "$file"
-            else
-                sed -i "s|^${key}=.*|${key}=${val}|" "$file"
-            fi
-        else
-            echo "${key}=${val}" >> "$file"
-        fi
-    }
-
     update_env "NEXT_PUBLIC_WORLD_ADDRESS" "$WORLD_ADDRESS" "$ENV_FILE"
     update_env "NEXT_PUBLIC_TORII_URL" "http://localhost:8080" "$ENV_FILE"
     update_env "NEXT_PUBLIC_TORII_RPC_URL" "http://localhost:5050" "$ENV_FILE"
@@ -282,6 +282,40 @@ if [ "$MODE" = "sepolia" ]; then
     fi
 
     echo -e "  ${GREEN}.env.local found with Sepolia config${NC}"
+
+    # ─── Start local Torii for Sepolia (Slot deployment is rate-limited) ─────
+    WORLD_ADDRESS=$(grep "^NEXT_PUBLIC_WORLD_ADDRESS=" "$ENV_FILE" | cut -d= -f2)
+    SEPOLIA_RPC=$(grep "^NEXT_PUBLIC_RPC_URL=" "$ENV_FILE" | cut -d= -f2)
+    SEPOLIA_RPC="${SEPOLIA_RPC:-https://api.cartridge.gg/x/starknet/sepolia}"
+
+    if [ -n "$WORLD_ADDRESS" ] && [ "$WORLD_ADDRESS" != "0x0" ]; then
+        echo -e "  ${GREEN}[T]${NC} Starting local Torii indexer for Sepolia..."
+        TORII_CMD=(torii --world "$WORLD_ADDRESS" --rpc "$SEPOLIA_RPC" --indexing.world_block 6810510 --http.port 8081)
+        TORII_HELP="$(torii --help 2>&1 || true)"
+        if printf '%s' "$TORII_HELP" | grep -q -- "--http.cors_origins"; then
+            TORII_CMD+=(--http.cors_origins "*")
+        fi
+        "${TORII_CMD[@]}" > "$LOG_DIR/torii.log" 2>&1 &
+        PIDS+=($!)
+        echo -e "       PID: $!  →  ${CYAN}logs/torii.log${NC}"
+
+        # Point frontend to local Torii
+        update_env "NEXT_PUBLIC_TORII_URL" "http://localhost:8081" "$ENV_FILE"
+
+        echo -n "       Waiting for Torii..."
+        for i in $(seq 1 30); do
+            if curl -s -X POST http://localhost:8081/graphql -H "Content-Type: application/json" -d '{"query":"{ __typename }"}' > /dev/null 2>&1; then
+                echo -e " ${GREEN}ready!${NC}"
+                break
+            fi
+            if [ "$i" -eq 30 ]; then
+                echo -e " ${YELLOW}TIMEOUT — check logs/torii.log${NC}"
+                break
+            fi
+            sleep 1
+            echo -n "."
+        done
+    fi
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -391,6 +425,9 @@ if [ "$MODE" = "local" ]; then
     echo -e "  ${GREEN}Torii${NC}     http://localhost:8080     logs/torii.log"
     echo -e "  ${YELLOW}Sozo${NC}      (deploy complete)         logs/sozo.log"
     echo -e "  World:   ${YELLOW}${WORLD_ADDRESS}${NC}"
+elif [ "$MODE" = "sepolia" ]; then
+    echo -e "  ${GREEN}Torii${NC}     http://localhost:8081     logs/torii.log"
+    echo -e "  World:   ${YELLOW}${WORLD_ADDRESS:-n/a}${NC}"
 fi
 
 if [ "$SKIP_GARAGA" = false ] && [ -n "${GARAGA_PYTHON:-}" ]; then

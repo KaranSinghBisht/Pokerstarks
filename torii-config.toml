@@ -1,0 +1,32 @@
+world_address = "0x04c0adab2889d4c434692cad512fbf0073e355e33bc85b6c7fbbe0967c669dd7"
+rpc = "https://api.cartridge.gg/x/starknet/sepolia"
+
+[runner]
+explorer = false
+check_contracts = false
+
+[indexing]
+events_chunk_size = 1024
+blocks_chunk_size = 10240
+pending = true
+polling_interval = 500
+max_concurrent_tasks = 100
+transactions = false
+contracts = []
+namespaces = []
+# World deployed between blocks 6810520-6810550
+world_block = 6810510
+controllers = false
+strict_model_reader = false
+
+[events]
+raw = false
+
+[erc]
+max_metadata_tasks = 10
+
+[sql]
+all_model_indices = false
+historical = []
+page_size = 32768
+cache_size = -500000
