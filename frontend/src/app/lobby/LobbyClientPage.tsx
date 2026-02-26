@@ -10,6 +10,12 @@ import { useChipToken } from "@/hooks/useChipToken";
 import TongoWallet from "@/components/poker/TongoWallet";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 
+/** Normalize a Starknet hex address to lowercase with no leading zeros after 0x */
+function normalizeAddress(addr: string): string {
+  if (!addr.startsWith("0x")) return addr.toLowerCase();
+  return "0x" + addr.slice(2).replace(/^0+/, "").toLowerCase();
+}
+
 const ROOM_NAMES = [
   "NEON VOID",
   "CYBER GULCH",
@@ -126,21 +132,23 @@ export default function LobbyPage() {
       // Poll for the newly created table by matching creator address.
       // refresh() returns the fresh table list directly, avoiding stale closure issues.
       let newTableId: number | null = null;
+      const normalizedAddr = normalizeAddress(address);
       for (let attempt = 0; attempt < 8; attempt++) {
         await new Promise((r) => setTimeout(r, 1200));
         const freshTables = await refresh();
         const match = freshTables.find(
           (t) =>
             !existingIds.has(t.tableId) &&
-            t.creator.toLowerCase() === address.toLowerCase(),
+            normalizeAddress(t.creator) === normalizedAddr,
         );
         if (match) {
           newTableId = match.tableId;
+          console.log("[solo] found match! tableId:", newTableId);
           break;
         }
       }
 
-      if (newTableId) {
+      if (newTableId !== null) {
         router.push(`/table/${newTableId}?solo=true`);
       } else {
         // Fallback: navigate to lobby and let user pick

@@ -136,6 +136,28 @@ const MODELS = {
   cardDecryptionVote: `${NAMESPACE}-CardDecryptionVote`,
 } as const;
 
+/** Resolve a model from the namespace-extracted models object.
+ *  Dojo SDK v1.9+ uses short names ("Table") after namespace extraction,
+ *  but older versions may use qualified names ("pokerstarks-Table").
+ */
+function getModel(models: Record<string, unknown>, qualifiedName: string): Record<string, unknown> | undefined {
+  const shortName = qualifiedName.includes("-") ? qualifiedName.split("-").slice(1).join("-") : qualifiedName;
+  return (models[shortName] ?? models[qualifiedName]) as Record<string, unknown> | undefined;
+}
+
+/** Normalize a Starknet address: strip leading zeros, lowercase, always 0x-prefixed. */
+function asAddress(v: unknown): string {
+  if (!v) return "0x0";
+  const s = String(v);
+  try {
+    if (BigInt(s) === 0n) return "0x0";
+  } catch { /* not a number, use as-is */ }
+  if (s.startsWith("0x") || s.startsWith("0X")) {
+    return "0x" + s.slice(2).replace(/^0+/, "").toLowerCase();
+  }
+  return "0x" + s.toLowerCase();
+}
+
 function asNum(v: unknown, fallback = 0): number {
   if (typeof v === "number") return v;
   if (typeof v === "bigint") return Number(v);
@@ -171,11 +193,11 @@ function asEnum(v: unknown, fallback: string): string {
 type DojoSchema = any;
 
 function parseTable(models: Record<string, unknown>): TableData | null {
-  const t = models[MODELS.table] as Record<string, unknown> | undefined;
+  const t = getModel(models, MODELS.table);
   if (!t) return null;
   return {
     tableId: asNum(t.table_id),
-    creator: String(t.creator ?? ""),
+    creator: asAddress(t.creator),
     maxPlayers: asNum(t.max_players),
     smallBlind: asBig(t.small_blind),
     bigBlind: asBig(t.big_blind),
@@ -185,17 +207,17 @@ function parseTable(models: Record<string, unknown>): TableData | null {
     currentHandId: asNum(t.current_hand_id),
     dealerSeat: asNum(t.dealer_seat),
     playerCount: asNum(t.player_count),
-    tokenAddress: String(t.token_address ?? "0x0"),
+    tokenAddress: asAddress(t.token_address),
   };
 }
 
 function parseSeat(models: Record<string, unknown>): SeatData | null {
-  const s = models[MODELS.seat] as Record<string, unknown> | undefined;
+  const s = getModel(models, MODELS.seat);
   if (!s) return null;
   return {
     tableId: asNum(s.table_id),
     seatIndex: asNum(s.seat_index),
-    player: String(s.player ?? ""),
+    player: asAddress(s.player),
     chips: asBig(s.chips),
     isOccupied: asBool(s.is_occupied),
     isReady: asBool(s.is_ready),
@@ -204,7 +226,7 @@ function parseSeat(models: Record<string, unknown>): SeatData | null {
 }
 
 function parseHand(models: Record<string, unknown>): HandData | null {
-  const h = models[MODELS.hand] as Record<string, unknown> | undefined;
+  const h = getModel(models, MODELS.hand);
   if (!h) return null;
   return {
     handId: asNum(h.hand_id),
@@ -231,12 +253,12 @@ function parseHand(models: Record<string, unknown>): HandData | null {
 function parsePlayerHand(
   models: Record<string, unknown>,
 ): PlayerHandData | null {
-  const ph = models[MODELS.playerHand] as Record<string, unknown> | undefined;
+  const ph = getModel(models, MODELS.playerHand);
   if (!ph) return null;
   return {
     handId: asNum(ph.hand_id),
     seatIndex: asNum(ph.seat_index),
-    player: String(ph.player ?? ""),
+    player: asAddress(ph.player),
     publicKeyX: String(ph.public_key_x ?? "0"),
     publicKeyY: String(ph.public_key_y ?? "0"),
     betThisRound: asBig(ph.bet_this_round),
@@ -257,9 +279,7 @@ function parsePlayerHand(
 function parseCommunityCards(
   models: Record<string, unknown>,
 ): CommunityCardsData | null {
-  const c = models[MODELS.communityCards] as
-    | Record<string, unknown>
-    | undefined;
+  const c = getModel(models, MODELS.communityCards);
   if (!c) return null;
   return {
     handId: asNum(c.hand_id),
@@ -279,9 +299,7 @@ function parseCommunityCards(
 function parseEncryptedDeck(
   models: Record<string, unknown>,
 ): EncryptedDeckData | null {
-  const d = models[MODELS.encryptedDeck] as
-    | Record<string, unknown>
-    | undefined;
+  const d = getModel(models, MODELS.encryptedDeck);
   if (!d) return null;
   const cards = (d.cards as string[] | undefined) ?? [];
   return {
@@ -294,7 +312,7 @@ function parseEncryptedDeck(
 function parseRevealToken(
   models: Record<string, unknown>,
 ): RevealTokenData | null {
-  const t = models[MODELS.revealToken] as Record<string, unknown> | undefined;
+  const t = getModel(models, MODELS.revealToken);
   if (!t) return null;
   return {
     handId: asNum(t.hand_id),
@@ -309,9 +327,7 @@ function parseRevealToken(
 function parseCardDecryptionVote(
   models: Record<string, unknown>,
 ): CardDecryptionVoteData | null {
-  const v = models[MODELS.cardDecryptionVote] as
-    | Record<string, unknown>
-    | undefined;
+  const v = getModel(models, MODELS.cardDecryptionVote);
   if (!v) return null;
   return {
     handId: asNum(v.hand_id),

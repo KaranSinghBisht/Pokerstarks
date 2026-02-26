@@ -25,21 +25,30 @@ function loadTongoKey(walletAddress: string): bigint | null {
   if (!stored) return null;
   try {
     const pk = BigInt(stored);
-    return pk > 0n ? pk : null;
+    // Validate key is within Stark curve order range
+    return pk >= 1n && pk < STARK_CURVE_ORDER ? pk : null;
   } catch {
     return null;
   }
 }
 
+// Stark curve order (EC_ORDER for the Stark curve used by Tongo)
+const STARK_CURVE_ORDER =
+  3618502788666131213697322783095070105526743751716087489154079457884512865583n;
+
 function generateTongoKey(): bigint {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  bytes[0] &= 0x0f; // Keep under 2^252 (Stark curve order)
-  let pk = 0n;
-  for (const b of bytes) {
-    pk = (pk << 8n) | BigInt(b);
+  // Generate a random scalar in [1, STARK_CURVE_ORDER - 1]
+  // Retry if we exceed the curve order (statistically rare)
+  for (;;) {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    bytes[0] &= 0x07; // Keep under 2^251
+    let pk = 0n;
+    for (const b of bytes) {
+      pk = (pk << 8n) | BigInt(b);
+    }
+    if (pk >= 1n && pk < STARK_CURVE_ORDER) return pk;
   }
-  return pk === 0n ? 1n : pk;
 }
 
 function saveTongoKey(walletAddress: string, pk: bigint): void {
@@ -164,7 +173,10 @@ export function useTongo(
     if (initAddressRef.current === normalAddr && !isReinit) return;
     prevReinitRef.current = reinitCounter;
 
-    // Clear stale state before (re-)init
+    // Clear stale state before (re-)init.
+    // P2 FIX: Reset isAvailable to false so the previous session's `true`
+    // cannot leak through while the async chain check is in-flight.
+    setIsAvailable(false);
     setBalance(null);
     setPending(null);
     setBalanceStatus("idle");
@@ -184,29 +196,6 @@ export function useTongo(
         providerRef.current = new RpcProvider({ nodeUrl: RPC_URL });
       }
 
-      // P3 fix: validate that the provider's chain matches Sepolia (SN_SEPOLIA = 0x534e5f5345504f4c4941).
-      // If the wallet is on a different chain, Tongo proofs will fail silently.
-      providerRef.current.getChainId().then((chainId) => {
-        const sepoliaId = "0x534e5f5345504f4c4941";
-        const mainnetId = "0x534e5f4d41494e";
-        // Tongo STRK address is for Sepolia; warn if chain doesn't match
-        if (
-          TONGO_STRK_ADDRESS.toLowerCase() ===
-            "0x408163bfcfc2d76f34b444cb55e09dace5905cf84c0884e4637c2c0f06ab6ed" &&
-          chainId !== sepoliaId
-        ) {
-          setError("Chain mismatch: Tongo contract is Sepolia but RPC is on a different network");
-        } else if (
-          TONGO_STRK_ADDRESS.toLowerCase() ===
-            "0x3a542d7eb73b3e33a2c54e9827ec17a6365e289ec35ccc94dde97950d9db498" &&
-          chainId !== mainnetId
-        ) {
-          setError("Chain mismatch: Tongo contract is Mainnet but RPC is on a different network");
-        }
-      }).catch(() => {
-        // Non-fatal: chain check is best-effort
-      });
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tongoAccount = new TongoAccount(
         pk,
@@ -218,8 +207,37 @@ export function useTongo(
       const pubKey = derivePublicKey(pk);
       setPublicKey({ x: BigInt(pubKey.x), y: BigInt(pubKey.y) });
       setTongoAddress(tongoAccount.tongoAddress());
-      setIsAvailable(true);
-      setError(null);
+
+      // P2 FIX: Do NOT set isAvailable(true) synchronously. Defer until
+      // the async chain check resolves. This closes the race where
+      // fund/withdraw/rollover could execute before chain validation.
+      providerRef.current.getChainId().then((chainId) => {
+        const sepoliaId = "0x534e5f5345504f4c4941";
+        const mainnetId = "0x534e5f4d41494e";
+        if (
+          TONGO_STRK_ADDRESS.toLowerCase() ===
+            "0x408163bfcfc2d76f34b444cb55e09dace5905cf84c0884e4637c2c0f06ab6ed" &&
+          chainId !== sepoliaId
+        ) {
+          setError("Chain mismatch: Tongo contract is Sepolia but RPC is on a different network");
+          setIsAvailable(false);
+        } else if (
+          TONGO_STRK_ADDRESS.toLowerCase() ===
+            "0x3a542d7eb73b3e33a2c54e9827ec17a6365e289ec35ccc94dde97950d9db498" &&
+          chainId !== mainnetId
+        ) {
+          setError("Chain mismatch: Tongo contract is Mainnet but RPC is on a different network");
+          setIsAvailable(false);
+        } else {
+          // Chain matches — safe to enable
+          setIsAvailable(true);
+          setError(null);
+        }
+      }).catch(() => {
+        // Non-fatal: chain check failed (network issue), allow availability
+        setIsAvailable(true);
+        setError(null);
+      });
     } catch (err) {
       console.error("Tongo initialization failed:", err);
       setError(err instanceof Error ? err.message : "Tongo init failed");
@@ -307,8 +325,8 @@ export function useTongo(
   const fund = useCallback(
     async (tongoAmount: bigint) => {
       const tongo = tongoRef.current;
-      if (!tongo || !account || !walletAddress) {
-        setError("Wallet not connected");
+      if (!tongo || !account || !walletAddress || !isAvailable) {
+        setError(!isAvailable ? "Tongo not available (chain mismatch or initializing)" : "Wallet not connected");
         return;
       }
 
@@ -330,15 +348,15 @@ export function useTongo(
         setLoading(false);
       }
     },
-    [account, walletAddress, execAndWait],
+    [account, walletAddress, execAndWait, isAvailable],
   );
 
   // Withdraw: Tongo → STRK
   const withdraw = useCallback(
     async (tongoAmount: bigint, toAddress: string) => {
       const tongo = tongoRef.current;
-      if (!tongo || !account || !walletAddress) {
-        setError("Wallet not connected");
+      if (!tongo || !account || !walletAddress || !isAvailable) {
+        setError(!isAvailable ? "Tongo not available (chain mismatch or initializing)" : "Wallet not connected");
         return;
       }
 
@@ -360,14 +378,14 @@ export function useTongo(
         setLoading(false);
       }
     },
-    [account, walletAddress, execAndWait],
+    [account, walletAddress, execAndWait, isAvailable],
   );
 
   // Rollover: move pending → balance
   const rollover = useCallback(async () => {
     const tongo = tongoRef.current;
-    if (!tongo || !account || !walletAddress) {
-      setError("Wallet not connected");
+    if (!tongo || !account || !walletAddress || !isAvailable) {
+      setError(!isAvailable ? "Tongo not available (chain mismatch or initializing)" : "Wallet not connected");
       return;
     }
 
@@ -386,7 +404,7 @@ export function useTongo(
     } finally {
       setLoading(false);
     }
-  }, [account, walletAddress, execAndWait]);
+  }, [account, walletAddress, execAndWait, isAvailable]);
 
   // P1 fix: key export/import for backup & recovery
   const exportKeyFn = useCallback((): string | null => {

@@ -97,6 +97,7 @@ export async function POST(request: Request) {
 
   try {
     const deployer = getDeployerAccount();
+    const provider = new RpcProvider({ nodeUrl: RPC_URL });
 
     // Transfer CHIP from deployer to recipient
     const tx = await deployer.execute({
@@ -104,6 +105,46 @@ export async function POST(request: Request) {
       entrypoint: "transfer",
       calldata: CallData.compile([recipientAddress, FAUCET_AMOUNT, 0]), // u256 = (low, high)
     });
+
+    // P2 FIX: Wait for on-chain confirmation AND check execution status.
+    // waitForTransaction resolves for ACCEPTED_ON_L2 even if execution_status
+    // is "REVERTED", so we must explicitly check the receipt.
+    try {
+      const receipt = await provider.waitForTransaction(tx.transaction_hash, {
+        retryInterval: 3000,
+        successStates: ["ACCEPTED_ON_L2", "ACCEPTED_ON_L1"],
+      });
+
+      // Check execution_status — tx can reach finality but still revert
+      const isReverted =
+        ("execution_status" in receipt &&
+          (receipt as Record<string, unknown>).execution_status === "REVERTED") ||
+        (typeof (receipt as Record<string, unknown>).isReverted === "function" &&
+          (receipt as { isReverted: () => boolean }).isReverted());
+
+      if (isReverted) {
+        claimHistory.delete(normalizedAddr);
+        console.error("Faucet tx reverted on-chain:", tx.transaction_hash);
+        return NextResponse.json(
+          {
+            error: "Transfer reverted on-chain. Please retry.",
+            transactionHash: tx.transaction_hash,
+          },
+          { status: 500 },
+        );
+      }
+    } catch (waitErr) {
+      // Tx may have failed to confirm — roll back rate limit so user can retry
+      claimHistory.delete(normalizedAddr);
+      console.error("Faucet tx failed confirmation:", waitErr);
+      return NextResponse.json(
+        {
+          error: "Transfer submitted but not confirmed. Please retry.",
+          transactionHash: tx.transaction_hash,
+        },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({
       success: true,

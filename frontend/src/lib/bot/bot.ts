@@ -206,7 +206,8 @@ export class PokerBot {
       );
 
       // Use approve+join multicall if table uses an ERC20 token
-      if (table.tokenAddress && table.tokenAddress !== "0x0") {
+      const isPlayMoney = !table.tokenAddress || (() => { try { return BigInt(table.tokenAddress) === 0n; } catch { return false; } })();
+      if (!isPlayMoney) {
         await this.chain.approveAndJoinTable(
           this.config.tableId,
           buyIn,
@@ -292,6 +293,8 @@ export class PokerBot {
     } else if (BETTING_PHASES.has(phase)) {
       await this.handleBetting(gs);
     } else if (phase === Phase.Showdown) {
+      // P0 FIX: Submit own hole card reveal tokens before voting
+      await this.handleShowdownRevealTokens(gs);
       await this.handleShowdown(gs);
     } else if (phase === Phase.Settling) {
       await this.handleSettling(gs);
@@ -533,6 +536,55 @@ export class PokerBot {
     this.bettingActedPhase = phaseKey;
   }
 
+  // P0 FIX: Submit own hole card reveal tokens during Showdown
+  private async handleShowdownRevealTokens(gs: GameState) {
+    const hand = gs.hand!;
+    const phaseKey = `${hand.handId}-showdown-reveal`;
+    if (this.revealedPhases.has(phaseKey)) return;
+    if (!gs.currentDeck?.cards?.length) return;
+
+    const mySeat = gs.seats.find(
+      (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
+    );
+    if (!mySeat) return;
+
+    const myPH = gs.playerHands.find(
+      (ph) => ph.player.toLowerCase() === this.config.address.toLowerCase(),
+    );
+    if (!myPH || myPH.hasFolded || !myPH.player || myPH.player === "0x0") return;
+
+    const session = this.ensureSessionForHand(hand.handId);
+    session.loadDeck(gs.currentDeck.cards);
+
+    const positions = [myPH.holeCard1Pos, myPH.holeCard2Pos];
+
+    for (const pos of positions) {
+      const alreadySubmitted = gs.revealTokens.some(
+        (t) =>
+          t.handId === hand.handId &&
+          t.cardPosition === pos &&
+          t.playerSeat === mySeat.seatIndex &&
+          t.proofVerified,
+      );
+      if (alreadySubmitted) continue;
+
+      const { token, proofInputs } = session.computeRevealTokenForCard(pos);
+
+      log.action(`Generating own hole card decrypt proof for position ${pos}...`);
+      const proof = await generateProof("decrypt", proofInputs);
+
+      await this.chain.submitRevealToken(
+        hand.handId,
+        pos,
+        token.x.toString(),
+        token.y.toString(),
+        proof,
+      );
+    }
+
+    this.revealedPhases.add(phaseKey);
+  }
+
   private async handleShowdown(gs: GameState) {
     const hand = gs.hand!;
     if (!gs.currentDeck?.cards?.length) return;
@@ -545,30 +597,30 @@ export class PokerBot {
     const session = this.ensureSessionForHand(hand.handId);
     session.loadDeck(gs.currentDeck.cards);
 
-    const myPH = gs.playerHands.find(
-      (ph) => ph.player.toLowerCase() === this.config.address.toLowerCase(),
-    );
-
-    const positions: Array<{ pos: number; isCommunity: boolean }> = [];
+    // P0 FIX: Vote on ALL card positions (community + ALL players' hole cards).
+    // With owner's reveal tokens now on-chain, every player can decrypt every card.
+    const positions: Array<{ pos: number }> = [];
 
     if (gs.communityCards) {
       positions.push(
-        { pos: gs.communityCards.flop1Pos, isCommunity: true },
-        { pos: gs.communityCards.flop2Pos, isCommunity: true },
-        { pos: gs.communityCards.flop3Pos, isCommunity: true },
-        { pos: gs.communityCards.turnPos, isCommunity: true },
-        { pos: gs.communityCards.riverPos, isCommunity: true },
+        { pos: gs.communityCards.flop1Pos },
+        { pos: gs.communityCards.flop2Pos },
+        { pos: gs.communityCards.flop3Pos },
+        { pos: gs.communityCards.turnPos },
+        { pos: gs.communityCards.riverPos },
       );
     }
 
-    if (myPH && !myPH.hasFolded && myPH.player && myPH.player !== "0x0") {
-      positions.push(
-        { pos: myPH.holeCard1Pos, isCommunity: false },
-        { pos: myPH.holeCard2Pos, isCommunity: false },
-      );
+    for (const ph of gs.playerHands) {
+      if (!ph.hasFolded && ph.player && ph.player !== "0x0") {
+        positions.push(
+          { pos: ph.holeCard1Pos },
+          { pos: ph.holeCard2Pos },
+        );
+      }
     }
 
-    for (const { pos, isCommunity } of positions) {
+    for (const { pos } of positions) {
       const key = `${hand.handId}-${pos}`;
       const alreadyVotedOnChain = gs.cardVotes.some(
         (v) =>
@@ -590,14 +642,13 @@ export class PokerBot {
           t.proofVerified,
       );
 
-      const required = isCommunity
-        ? hand.numPlayers
-        : hand.numPlayers > 0
-          ? hand.numPlayers - 1
-          : 0;
+      // P0 FIX: All cards now require N tokens (owner submits own hole card
+      // tokens during Showdown). Both community and hole cards need N tokens.
+      const required = hand.numPlayers;
       if (tokensForPos.length < required) continue;
 
-      const includeOwnToken = !isCommunity;
+      // P0 FIX: All N tokens are on-chain → includeOwnToken=false
+      const includeOwnToken = false;
       const tokens = tokensForPos.map((t) => ({
         x: BigInt(t.tokenX),
         y: BigInt(t.tokenY),

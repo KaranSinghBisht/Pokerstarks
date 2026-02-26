@@ -282,6 +282,14 @@ function normalizeExecuteCall(call: ExecuteCallInput) {
 }
 
 function toInjectedAccount(wallet: InjectedWallet, address: string): AccountInterface {
+  // Prefer the wallet's native Account object when available — it supports
+  // proper gas estimation (estimateInvokeFee) which prevents "out of gas"
+  // errors from Dojo world calls that are expensive to estimate.
+  if (wallet.account && typeof wallet.account.execute === "function") {
+    return wallet.account;
+  }
+
+  // Fallback: bare request-based wrapper for wallets without .account
   const account = {
     address,
     async execute(callsInput: ExecuteCallInput | ExecuteCallInput[]) {

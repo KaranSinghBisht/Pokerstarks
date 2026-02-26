@@ -37,7 +37,10 @@ export default function TablePage() {
     actions,
   } = useGameOrchestrator(tableId);
 
-  const localAddress = address || "";
+  // Normalize wallet address to match Torii format (no leading zeros, lowercase)
+  const localAddress = address
+    ? "0x" + address.slice(2).replace(/^0+/, "").toLowerCase()
+    : "";
   const [fillingBots, setFillingBots] = useState(false);
 
   const isHost =

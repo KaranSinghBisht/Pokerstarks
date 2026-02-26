@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const tableId = Number(body.tableId);
 
-    if (!tableId || isNaN(tableId)) {
+    if (tableId === undefined || tableId === null || isNaN(tableId)) {
       return NextResponse.json(
         { error: "Missing or invalid tableId" },
         { status: 400 },

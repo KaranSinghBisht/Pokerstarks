@@ -11,8 +11,15 @@ import { GamePhase } from "@/lib/constants";
 
 const CARD_NOT_DEALT = 255;
 
+/** Normalize a Starknet address: strip leading zeros, lowercase. */
+function normalizeAddr(addr: string | null): string | null {
+  if (!addr) return addr;
+  return "0x" + addr.slice(2).replace(/^0+/, "").toLowerCase();
+}
+
 export function useGameOrchestrator(tableId: number) {
-  const { address, account } = useStarknet();
+  const { address: rawAddress, account } = useStarknet();
+  const address = normalizeAddr(rawAddress);
 
   // Core game state from Torii
   const {

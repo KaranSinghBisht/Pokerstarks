@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const tableId = Number(searchParams.get("tableId"));
 
-  if (!tableId || isNaN(tableId)) {
+  if (tableId === undefined || tableId === null || isNaN(tableId)) {
     return NextResponse.json(
       { error: "Missing or invalid tableId query param" },
       { status: 400 },

@@ -5,6 +5,16 @@ import { AccountInterface, CallData } from "starknet";
 import { PlayerAction, CHIP_TOKEN_ADDRESS } from "@/lib/constants";
 import { getSystemAddress } from "@/lib/contracts";
 
+/** Returns true if the address is effectively 0x0 (zero address = play money). */
+function isZeroAddress(addr: string): boolean {
+  if (!addr) return true;
+  try {
+    return BigInt(addr) === 0n;
+  } catch {
+    return false;
+  }
+}
+
 // Helper: execute a Dojo system call via starknet.js
 async function executeCall(
   account: AccountInterface | null,
@@ -67,7 +77,7 @@ export function usePokerActions(
       if (!lobbyAddr) throw new Error("Missing contract address for join_table.");
 
       // If a real token is configured, multicall: approve + join_table
-      if (resolvedToken && resolvedToken !== "0x0") {
+      if (resolvedToken && !isZeroAddress(resolvedToken)) {
         const result = await account.execute([
           {
             contractAddress: resolvedToken,

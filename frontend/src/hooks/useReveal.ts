@@ -44,6 +44,12 @@ const DEALING_PHASES = [
   GamePhase.DealingRiver,
 ];
 
+// P0 FIX: Include Showdown so owner submits own hole card reveal tokens
+const REVEAL_PHASES = [
+  ...DEALING_PHASES,
+  GamePhase.Showdown,
+];
+
 export function useReveal({
   hand,
   playerHands,
@@ -103,7 +109,7 @@ export function useReveal({
   // Auto-submit reveal tokens when in a dealing phase
   useEffect(() => {
     if (!hand || !session || !mySeat || !currentDeckData) return;
-    if (!DEALING_PHASES.includes(hand.phase as GamePhase)) return;
+    if (!REVEAL_PHASES.includes(hand.phase as GamePhase)) return;
 
     const phaseKey = `${hand.handId}-${hand.phase}`;
     if (revealedPhasesRef.current.has(phaseKey)) return;
@@ -234,33 +240,36 @@ export function useReveal({
       try {
         session.loadDeck(currentDeckData);
 
-        // Build position list: community cards + OWN hole cards only.
-        // Non-owners cannot decrypt other players' hole cards (missing owner's token).
-        const positions: Array<{ pos: number; isCommunity: boolean }> = [];
+        // P0 FIX: Build position list for ALL cards that need consensus votes.
+        // With owner's reveal tokens now on-chain, every player can decrypt
+        // every card and must vote on all of them for consensus.
+        const positions: Array<{ pos: number }> = [];
 
         if (communityCards) {
           positions.push(
-            { pos: communityCards.flop1Pos, isCommunity: true },
-            { pos: communityCards.flop2Pos, isCommunity: true },
-            { pos: communityCards.flop3Pos, isCommunity: true },
-            { pos: communityCards.turnPos, isCommunity: true },
-            { pos: communityCards.riverPos, isCommunity: true },
+            { pos: communityCards.flop1Pos },
+            { pos: communityCards.flop2Pos },
+            { pos: communityCards.flop3Pos },
+            { pos: communityCards.turnPos },
+            { pos: communityCards.riverPos },
           );
         }
 
-        // Only push own hole cards — the only ones we can correctly decrypt.
-        if (myPlayerHand && !myPlayerHand.hasFolded && myPlayerHand.player && myPlayerHand.player !== "0x0") {
-          positions.push(
-            { pos: myPlayerHand.holeCard1Pos, isCommunity: false },
-            { pos: myPlayerHand.holeCard2Pos, isCommunity: false },
-          );
+        // ALL non-folded players' hole cards (not just own)
+        for (const ph of playerHands) {
+          if (!ph.hasFolded && ph.player && ph.player !== "0x0") {
+            positions.push(
+              { pos: ph.holeCard1Pos },
+              { pos: ph.holeCard2Pos },
+            );
+          }
         }
 
         // A-05 FIX: Use numPlayers (all original hand participants) for token requirements.
         // In n-of-n ElGamal, ALL players' tokens are needed regardless of fold status.
         const numPlayers = hand.numPlayers ?? 0;
 
-        for (const { pos, isCommunity } of positions) {
+        for (const { pos } of positions) {
           const key = `${hand.handId}-${pos}`;
           if (submittedDecryptionsRef.current.has(key)) continue;
 
@@ -269,16 +278,15 @@ export function useReveal({
             (t) => t.handId === hand.handId && t.cardPosition === pos && t.proofVerified,
           );
 
-          // Community cards: N tokens on-chain (all players submitted during dealing)
-          // Own hole cards: N-1 tokens on-chain (everyone except owner submitted)
-          const required = isCommunity ? numPlayers : (numPlayers > 0 ? numPlayers - 1 : 0);
+          // P0 FIX: All cards now have N tokens on-chain (owner submits own hole card
+          // tokens during Showdown). Both community and hole cards require N tokens.
+          const required = numPlayers;
 
           if (tokensForPos.length < required) continue;
 
-          // Decrypt the card.
-          // Community: all N tokens are on-chain → includeOwnToken=false (would double-count)
-          // Own hole:  N-1 tokens on-chain → includeOwnToken=true (adds our own to make N)
-          const includeOwnToken = !isCommunity;
+          // P0 FIX: All N tokens are on-chain for all cards → includeOwnToken=false
+          // (owner's token is already in the on-chain set, don't double-count)
+          const includeOwnToken = false;
           const tokens = tokensForPos.map((t) => ({
             x: BigInt(t.tokenX),
             y: BigInt(t.tokenY),
@@ -372,6 +380,12 @@ function getPositionsForPhase(
     positions.push(communityCards.turnPos);
   } else if (phase === GamePhase.DealingRiver && communityCards) {
     positions.push(communityCards.riverPos);
+  } else if (phase === GamePhase.Showdown) {
+    // P0 FIX: Owner submits reveal tokens for their OWN hole cards during Showdown
+    const myPH = playerHands.find((ph) => ph.seatIndex === mySeatIndex);
+    if (myPH && !myPH.hasFolded && myPH.player && myPH.player !== "0x0") {
+      positions.push(myPH.holeCard1Pos, myPH.holeCard2Pos);
+    }
   }
 
   return positions;

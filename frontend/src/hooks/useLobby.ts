@@ -28,6 +28,19 @@ function asBigInt(value: unknown, fallback: bigint = 0n): bigint {
   return fallback;
 }
 
+/** Normalize a Starknet address: strip leading zeros, lowercase, always 0x-prefixed. */
+function asAddress(value: unknown): string {
+  if (!value) return "0x0";
+  const s = String(value);
+  try {
+    if (BigInt(s) === 0n) return "0x0";
+  } catch { /* not a number, use as-is */ }
+  if (s.startsWith("0x") || s.startsWith("0X")) {
+    return "0x" + s.slice(2).replace(/^0+/, "").toLowerCase();
+  }
+  return "0x" + s.toLowerCase();
+}
+
 function asBool(value: unknown): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
@@ -46,11 +59,11 @@ function asEnum(value: unknown, fallback: string): string {
 }
 
 function parseTable(models: Record<string, unknown>): TableData | null {
-  const t = models[`${NAMESPACE}-Table`] as Record<string, unknown> | undefined;
+  const t = (models["Table"] ?? models[`${NAMESPACE}-Table`]) as Record<string, unknown> | undefined;
   if (!t) return null;
   return {
     tableId: asNumber(t.table_id),
-    creator: String(t.creator ?? ""),
+    creator: asAddress(t.creator),
     maxPlayers: asNumber(t.max_players),
     smallBlind: asBigInt(t.small_blind),
     bigBlind: asBigInt(t.big_blind),
@@ -62,10 +75,10 @@ function parseTable(models: Record<string, unknown>): TableData | null {
     playerCount: asNumber(t.player_count),
     rakeBps: asNumber(t.rake_bps),
     rakeCap: asBigInt(t.rake_cap),
-    rakeRecipient: String(t.rake_recipient ?? "0x0"),
+    rakeRecipient: asAddress(t.rake_recipient),
     isPrivate: asBool(t.is_private),
     inviteCodeHash: String(t.invite_code_hash ?? "0"),
-    tokenAddress: String(t.token_address ?? "0x0"),
+    tokenAddress: asAddress(t.token_address),
   };
 }
 
@@ -134,6 +147,7 @@ export function useLobby(): UseLobbyReturn {
       setLoading(false);
       return parsed;
     } catch (err) {
+      console.error("[loadTables] ERROR:", err);
       setTables([]);
       setError(err instanceof Error ? err.message : "Failed to load tables.");
       setLoading(false);

@@ -16,6 +16,7 @@ import { WORLD_ADDRESS, TORII_URL, NAMESPACE } from "@/lib/dojo-config";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DojoSchema = any;
 
+// Qualified model names for SDK queries (KeysClause)
 const MODELS = {
   table: `${NAMESPACE}-Table`,
   seat: `${NAMESPACE}-Seat`,
@@ -25,6 +26,17 @@ const MODELS = {
   encryptedDeck: `${NAMESPACE}-EncryptedDeck`,
   revealToken: `${NAMESPACE}-RevealToken`,
 } as const;
+
+/**
+ * Resolve a model from entity.models[NAMESPACE].
+ * Dojo SDK >=1.9 returns inner keys as just "Table",
+ * but older versions may use "pokerstarks-Table".
+ */
+function getModel(models: Record<string, unknown>, qualifiedName: string): Record<string, unknown> | undefined {
+  // Try short name first (e.g. "Table"), then qualified (e.g. "pokerstarks-Table")
+  const shortName = qualifiedName.includes("-") ? qualifiedName.split("-").slice(1).join("-") : qualifiedName;
+  return (models[shortName] ?? models[qualifiedName]) as Record<string, unknown> | undefined;
+}
 
 function asNumber(value: unknown, fallback = 0): number {
   if (typeof value === "number") return value;
@@ -38,6 +50,19 @@ function asBigInt(value: unknown, fallback: bigint = 0n): bigint {
   if (typeof value === "number") return BigInt(value);
   if (typeof value === "string" && value.length > 0) return BigInt(value);
   return fallback;
+}
+
+/** Normalize a Starknet address: strip leading zeros, lowercase, always 0x-prefixed. */
+function asAddress(value: unknown): string {
+  if (!value) return "0x0";
+  const s = String(value);
+  try {
+    if (BigInt(s) === 0n) return "0x0";
+  } catch { /* not a number, use as-is */ }
+  if (s.startsWith("0x") || s.startsWith("0X")) {
+    return "0x" + s.slice(2).replace(/^0+/, "").toLowerCase();
+  }
+  return "0x" + s.toLowerCase();
 }
 
 function asBool(value: unknown): boolean {
@@ -58,11 +83,11 @@ function asEnum(value: unknown, fallback: string): string {
 }
 
 function parseTable(models: Record<string, unknown>): TableData | null {
-  const t = models[MODELS.table] as Record<string, unknown> | undefined;
+  const t = getModel(models, MODELS.table);
   if (!t) return null;
   return {
     tableId: asNumber(t.table_id),
-    creator: String(t.creator ?? ""),
+    creator: asAddress(t.creator),
     maxPlayers: asNumber(t.max_players),
     smallBlind: asBigInt(t.small_blind),
     bigBlind: asBigInt(t.big_blind),
@@ -74,20 +99,20 @@ function parseTable(models: Record<string, unknown>): TableData | null {
     playerCount: asNumber(t.player_count),
     rakeBps: asNumber(t.rake_bps),
     rakeCap: asBigInt(t.rake_cap),
-    rakeRecipient: String(t.rake_recipient ?? "0x0"),
+    rakeRecipient: asAddress(t.rake_recipient),
     isPrivate: asBool(t.is_private),
     inviteCodeHash: String(t.invite_code_hash ?? "0"),
-    tokenAddress: String(t.token_address ?? "0x0"),
+    tokenAddress: asAddress(t.token_address),
   };
 }
 
 function parseSeat(models: Record<string, unknown>): SeatData | null {
-  const s = models[MODELS.seat] as Record<string, unknown> | undefined;
+  const s = getModel(models, MODELS.seat);
   if (!s) return null;
   return {
     tableId: asNumber(s.table_id),
     seatIndex: asNumber(s.seat_index),
-    player: String(s.player ?? ""),
+    player: asAddress(s.player),
     chips: asBigInt(s.chips),
     isOccupied: asBool(s.is_occupied),
     isReady: asBool(s.is_ready),
@@ -96,7 +121,7 @@ function parseSeat(models: Record<string, unknown>): SeatData | null {
 }
 
 function parseHand(models: Record<string, unknown>): HandData | null {
-  const h = models[MODELS.hand] as Record<string, unknown> | undefined;
+  const h = getModel(models, MODELS.hand);
   if (!h) return null;
   return {
     handId: asNumber(h.hand_id),
@@ -121,12 +146,12 @@ function parseHand(models: Record<string, unknown>): HandData | null {
 }
 
 function parsePlayerHand(models: Record<string, unknown>): PlayerHandData | null {
-  const ph = models[MODELS.playerHand] as Record<string, unknown> | undefined;
+  const ph = getModel(models, MODELS.playerHand);
   if (!ph) return null;
   return {
     handId: asNumber(ph.hand_id),
     seatIndex: asNumber(ph.seat_index),
-    player: String(ph.player ?? ""),
+    player: asAddress(ph.player),
     publicKeyX: String(ph.public_key_x ?? "0"),
     publicKeyY: String(ph.public_key_y ?? "0"),
     betThisRound: asBigInt(ph.bet_this_round),
@@ -145,7 +170,7 @@ function parsePlayerHand(models: Record<string, unknown>): PlayerHandData | null
 }
 
 function parseCommunityCards(models: Record<string, unknown>): CommunityCardsData | null {
-  const c = models[MODELS.communityCards] as Record<string, unknown> | undefined;
+  const c = getModel(models, MODELS.communityCards);
   if (!c) return null;
   return {
     handId: asNumber(c.hand_id),
@@ -163,7 +188,7 @@ function parseCommunityCards(models: Record<string, unknown>): CommunityCardsDat
 }
 
 function parseEncryptedDeck(models: Record<string, unknown>): EncryptedDeckData | null {
-  const d = models[MODELS.encryptedDeck] as Record<string, unknown> | undefined;
+  const d = getModel(models, MODELS.encryptedDeck);
   if (!d) return null;
   const cards = (d.cards as string[] | undefined) ?? [];
   return {
@@ -174,7 +199,7 @@ function parseEncryptedDeck(models: Record<string, unknown>): EncryptedDeckData 
 }
 
 function parseRevealToken(models: Record<string, unknown>): RevealTokenData | null {
-  const t = models[MODELS.revealToken] as Record<string, unknown> | undefined;
+  const t = getModel(models, MODELS.revealToken);
   if (!t) return null;
   return {
     handId: asNumber(t.hand_id),
