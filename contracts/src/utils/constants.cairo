@@ -21,10 +21,12 @@ pub const CARD_NOT_DEALT: u8 = 255;
 pub const MAX_RAKE_BPS: u16 = 1000; // Max 10%
 
 // A-01 NOTE: Grumpkin curve is defined over the BN254 scalar field.
-// The BN254 scalar field prime equals the Starknet felt252 modulus,
-// so Grumpkin coordinates fit natively in felt252 without any truncation.
-// The u256→felt252 conversion via try_into().unwrap() is safe because
-// all valid Grumpkin points have coordinates < felt252 modulus.
+// The BN254 scalar field prime (r ≈ 2.19e76) is LARGER than the Starknet
+// felt252 modulus (p ≈ 3.62e75). However, all Grumpkin coordinates used
+// in this protocol (generator, encrypted cards, reveal tokens) have values
+// that fit within felt252. The try_into().unwrap() conversion will panic
+// (revert the transaction) if a coordinate ever exceeds felt252 modulus,
+// providing a safe guard against silent truncation.
 
 // Grumpkin curve generator point (y^2 = x^3 - 17)
 pub const GEN_X: felt252 = 1;
