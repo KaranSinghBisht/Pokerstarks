@@ -8,15 +8,28 @@
 
 ---
 
-## Privacy Features
+## Privacy Architecture
 
-Pokerstarks is built around a core principle: **no one — not the server, not the contract, not other players — can see your cards until you choose to reveal them.**
+Pokerstarks implements three layers of privacy:
 
-- **Encrypted cards** — ElGamal encryption on the Grumpkin curve. The contract never sees plaintext card values. Decryption happens client-side only.
-- **Provably fair shuffles** — Each player shuffles and re-encrypts the deck, submitting a Noir ZK proof verified on-chain via Garaga. No single player can stack the deck.
-- **Confidential chips** — Tongo integration for hidden chip balances (with public fallback).
-- **Spectator-safe** — Spectators watch the game in real-time but can never see hole cards. Encrypted data and reveal tokens are never combined on-chain.
-- **No trusted dealer** — The entire game state lives on Starknet through Dojo ECS. There is no server that knows the deck order.
+### Layer 1: Card Privacy (ZK Proofs)
+
+Hole cards are encrypted with ElGamal on the Grumpkin curve. The contract **never** sees plaintext card values — decryption is client-side only. Each player shuffles and re-encrypts the deck, submitting a Noir ZK proof verified on-chain via Garaga. No single player can stack the deck. There is no trusted dealer; the entire game state lives on Starknet through Dojo ECS.
+
+### Layer 2: Bankroll Privacy (Tongo Confidential Tokens)
+
+Between sessions, STRK is shielded in Tongo — balances are hidden from on-chain observers.
+
+- **Private Buy-In**: Tongo withdraw (ZK proof) -> STRK approve -> join table (one click)
+- **Shield Winnings**: Leave table -> Tongo fund (one click)
+
+Nobody can track your lifetime P&L, session results, or total holdings. Like bringing cash to a Vegas table: visible while playing, private when you leave.
+
+### Layer 3: Session Privacy
+
+- Spectators see **SHIELDED** instead of chip counts on privacy tables
+- External observers cannot correlate poker sessions with wallet activity
+- Privacy tables use STRK via Tongo; standard tables use CHIP tokens (public fallback available)
 
 ---
 
