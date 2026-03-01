@@ -1,5 +1,6 @@
 "use client";
 
+import { motion, AnimatePresence } from "framer-motion";
 import PlayerSeat from "./PlayerSeat";
 import CommunityCardsComponent from "./CommunityCards";
 import BettingControls from "./BettingControls";
@@ -77,13 +78,28 @@ export default function PokerTable({
         <div className="felt-gradient absolute inset-4 rounded-full border-[10px] border-[#5d4037] shadow-2xl shadow-black/50">
           <div className="pointer-events-none absolute inset-2 rounded-full border-4 border-white/10" />
 
-          {hand && hand.pot > 0n && (
-            <div className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2">
-              <div className="border-2 border-[var(--accent)]/40 bg-black/45 px-4 py-2 font-retro-display text-[10px] text-[var(--accent)] pixel-border-sm">
-                POT: {Number(hand.pot)}
-              </div>
-            </div>
-          )}
+          <AnimatePresence>
+            {hand && hand.pot > 0n && (
+              <motion.div
+                key="pot"
+                initial={{ opacity: 0, scale: 0.7 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.7 }}
+                transition={{ type: "spring", stiffness: 350, damping: 20 }}
+                className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2"
+              >
+                <motion.div
+                  key={Number(hand.pot)}
+                  initial={{ scale: 1.15 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                  className="border-2 border-[var(--accent)]/40 bg-black/45 px-4 py-2 font-retro-display text-[10px] text-[var(--accent)] pixel-border-sm"
+                >
+                  POT: {Number(hand.pot)}
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
             <CommunityCardsComponent cards={communityCards} phase={hand?.phase || ""} />

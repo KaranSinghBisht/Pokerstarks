@@ -1,5 +1,6 @@
 "use client";
 
+import { motion, AnimatePresence } from "framer-motion";
 import Card from "./Card";
 import type { SeatData, PlayerHandData } from "@/lib/types";
 
@@ -79,7 +80,7 @@ export default function PlayerSeat({
       <div
         className={`flex h-14 w-14 items-center justify-center border-4 bg-slate-800 pixel-border-sm ${
           isCurrentTurn
-            ? "border-[var(--accent)] animate-pulse"
+            ? "border-[var(--accent)] animate-turn-glow"
             : playerHand?.hasFolded
               ? "border-slate-700 grayscale opacity-70"
               : isLocalPlayer
@@ -124,11 +125,20 @@ export default function PlayerSeat({
         </div>
       )}
 
-      {playerHand && playerHand.betThisRound > 0n && (
-        <div className="bg-black/80 px-2 py-0.5 font-retro-display text-[8px] text-[var(--secondary)] pixel-border-sm">
-          BET {Number(playerHand.betThisRound)}
-        </div>
-      )}
+      <AnimatePresence>
+        {playerHand && playerHand.betThisRound > 0n && (
+          <motion.div
+            key="bet"
+            initial={{ opacity: 0, y: 8, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.6 }}
+            transition={{ type: "spring", stiffness: 400, damping: 22 }}
+            className="bg-black/80 px-2 py-0.5 font-retro-display text-[8px] text-[var(--secondary)] pixel-border-sm"
+          >
+            BET {Number(playerHand.betThisRound)}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {playerHand?.isAllIn && (
         <div className="font-retro-display text-[8px] text-red-400">ALL IN</div>

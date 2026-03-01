@@ -216,6 +216,32 @@ body {
   }
 }
 
+@keyframes turn-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 6px var(--accent),
+      0 0 14px rgba(255, 215, 0, 0.35),
+      0 -2px 0 0 #000,
+      0 2px 0 0 #000,
+      -2px 0 0 0 #000,
+      2px 0 0 0 #000;
+  }
+  50% {
+    box-shadow:
+      0 0 14px var(--accent),
+      0 0 28px rgba(255, 215, 0, 0.5),
+      0 -2px 0 0 #000,
+      0 2px 0 0 #000,
+      -2px 0 0 0 #000,
+      2px 0 0 0 #000;
+  }
+}
+
+.animate-turn-glow {
+  animation: turn-glow 1.6s ease-in-out infinite;
+}
+
 .scrollbar-pixel::-webkit-scrollbar {
   width: 8px;
 }
