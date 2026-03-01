@@ -1,16 +1,28 @@
 # Pokerstarks
 
-Fully on-chain, zero-knowledge Texas Hold'em on Starknet. No trusted dealer. No server sees your cards.
+[![CI](https://github.com/KaranSinghBisht/Pokerstarks/actions/workflows/ci.yml/badge.svg)](https://github.com/KaranSinghBisht/Pokerstarks/actions/workflows/ci.yml)
 
-Built for the **RE{DEFINE} Hackathon — Privacy Track**.
+**Fully on-chain, zero-knowledge Texas Hold'em on Starknet. No trusted dealer. No server sees your cards.**
+
+[Live Demo](https://frontend-seven-beta-93.vercel.app) | RE{DEFINE} Hackathon — Privacy Track
+
+---
+
+## Privacy Features
+
+Pokerstarks is built around a core principle: **no one — not the server, not the contract, not other players — can see your cards until you choose to reveal them.**
+
+- **Encrypted cards** — ElGamal encryption on the Grumpkin curve. The contract never sees plaintext card values. Decryption happens client-side only.
+- **Provably fair shuffles** — Each player shuffles and re-encrypts the deck, submitting a Noir ZK proof verified on-chain via Garaga. No single player can stack the deck.
+- **Confidential chips** — Tongo integration for hidden chip balances (with public fallback).
+- **Spectator-safe** — Spectators watch the game in real-time but can never see hole cards. Encrypted data and reveal tokens are never combined on-chain.
+- **No trusted dealer** — The entire game state lives on Starknet through Dojo ECS. There is no server that knows the deck order.
 
 ---
 
 ## How It Works
 
 Pokerstarks implements the [mental poker](https://en.wikipedia.org/wiki/Mental_poker) protocol: players collectively shuffle and encrypt the deck using ElGamal encryption on the Grumpkin curve. Cards are revealed via partial decryption tokens, each accompanied by a zero-knowledge proof verified on-chain. The entire game state lives on Starknet through the Dojo Entity Component System.
-
-**No one — not the server, not the contract, not other players — can see your cards until you choose to reveal them.**
 
 ```
                           Starknet
@@ -37,6 +49,80 @@ Pokerstarks implements the [mental poker](https://en.wikipedia.org/wiki/Mental_p
    | bb.js  |  Client-side proving
    +--------+
 ```
+
+---
+
+## Deployed on Starknet Sepolia
+
+The full system is deployed and indexed on Sepolia testnet.
+
+### World
+
+| | Address |
+|---|---------|
+| **Dojo World** | [`0x04c0adab2889d4c434692cad512fbf0073e355e33bc85b6c7fbbe0967c669dd7`](https://sepolia.starkscan.co/contract/0x04c0adab2889d4c434692cad512fbf0073e355e33bc85b6c7fbbe0967c669dd7) |
+
+### System Contracts
+
+| System | Address |
+|--------|---------|
+| Lobby | [`0x5a04f9ae0a0abec7c6adfc523176ba17411a477bae2a7bff29fa93992892bdf`](https://sepolia.starkscan.co/contract/0x5a04f9ae0a0abec7c6adfc523176ba17411a477bae2a7bff29fa93992892bdf) |
+| Game Setup | [`0x39496df188be8cea81d3ac0258e60a8e7111dac1bbb353dec13caadd6cbab93`](https://sepolia.starkscan.co/contract/0x39496df188be8cea81d3ac0258e60a8e7111dac1bbb353dec13caadd6cbab93) |
+| Shuffle | [`0x598106c1d9d41e2546f999a15f53b80ab918e28a471392047c6066f3a931b31`](https://sepolia.starkscan.co/contract/0x598106c1d9d41e2546f999a15f53b80ab918e28a471392047c6066f3a931b31) |
+| Dealing | [`0x36901ad9a3a6185071f303f7f9a35f5cab5fe2b86ef9ef105fe148e423dedf1`](https://sepolia.starkscan.co/contract/0x36901ad9a3a6185071f303f7f9a35f5cab5fe2b86ef9ef105fe148e423dedf1) |
+| Betting | [`0x17f3f16ab65bfee5fcd4f68b1aef0d6660ea7117430d639c442d3ee07f63d0f`](https://sepolia.starkscan.co/contract/0x17f3f16ab65bfee5fcd4f68b1aef0d6660ea7117430d639c442d3ee07f63d0f) |
+| Showdown | [`0x29b1ce42171363a1928f8b131cdaeb8c5f323aa56ea8adb9bf20505ac6afcc0`](https://sepolia.starkscan.co/contract/0x29b1ce42171363a1928f8b131cdaeb8c5f323aa56ea8adb9bf20505ac6afcc0) |
+| Settle | [`0x3876f692bb446bf047d821c93f8a516f0ebfef9bd3fcdae16f54ff2085d1882`](https://sepolia.starkscan.co/contract/0x3876f692bb446bf047d821c93f8a516f0ebfef9bd3fcdae16f54ff2085d1882) |
+| Chat | [`0x1c3fa28dc400a60080f713778749c778ed24f683df859f369c365f2ef9c2569`](https://sepolia.starkscan.co/contract/0x1c3fa28dc400a60080f713778749c778ed24f683df859f369c365f2ef9c2569) |
+| Timeout | [`0x63265f742cd6428b82026e94ba2e06d68c7ebcd97d7ec6779cab3c234ec8eb0`](https://sepolia.starkscan.co/contract/0x63265f742cd6428b82026e94ba2e06d68c7ebcd97d7ec6779cab3c234ec8eb0) |
+
+### ZK Verifiers
+
+| Verifier | Address |
+|----------|---------|
+| Shuffle Verifier | [`0x40309089f223e732973bed9b6956a2bcd4491a355d64d12f7a8824a606283f6`](https://sepolia.starkscan.co/contract/0x40309089f223e732973bed9b6956a2bcd4491a355d64d12f7a8824a606283f6) |
+| Decrypt Verifier | [`0x3ff2d79aba6b812f0316d7660ee3bff353c7fb240c06e96e8fffb03e4b5233b`](https://sepolia.starkscan.co/contract/0x3ff2d79aba6b812f0316d7660ee3bff353c7fb240c06e96e8fffb03e4b5233b) |
+
+### Infrastructure
+
+| Service | URL |
+|---------|-----|
+| Torii Indexer | `https://api.cartridge.gg/x/pokerstarks-torii/torii` |
+| Frontend | [https://frontend-seven-beta-93.vercel.app](https://frontend-seven-beta-93.vercel.app) |
+| RPC | `https://api.cartridge.gg/x/starknet/sepolia` |
+
+---
+
+## Try It
+
+### Option A: Browse the Live Site
+
+Visit [https://frontend-seven-beta-93.vercel.app](https://frontend-seven-beta-93.vercel.app) to explore the lobby, create tables, and connect with Cartridge Controller. The live site connects to Sepolia contracts and the Torii indexer.
+
+> **Note**: Full ZK gameplay (shuffle proofs, card dealing) requires the Garaga calldata server, which runs locally. The live site supports lobby browsing, table creation, and betting — but the cryptographic shuffle phase requires the local dev stack (see Option B).
+
+### Option B: Full Local Demo (with ZK proofs)
+
+```bash
+# Clone and start everything
+git clone https://github.com/KaranSinghBisht/Pokerstarks.git
+cd Pokerstarks
+
+# Local mode (Katana devnet)
+./dev.sh
+
+# Or Sepolia mode (uses deployed contracts)
+export TORII_RPC_URL=<your-sepolia-rpc>
+./dev.sh --sepolia
+```
+
+This starts Katana (or connects to Sepolia), deploys contracts, launches Torii, the Garaga calldata server, and the frontend at `localhost:3000`.
+
+**Solo demo with bots:**
+1. Open `localhost:3000` and connect with Cartridge Controller
+2. Create a table
+3. Click "Fill with Bots" to add AI opponents
+4. Watch the ZK shuffle in action, then play a full hand
 
 ---
 
@@ -266,6 +352,12 @@ Key variables:
 
 ---
 
+## Team
+
+Built by [Karan Singh Bisht](https://github.com/KaranSinghBisht) for the [RE{DEFINE} Hackathon](https://redefinehack.com/) — Privacy Track.
+
+---
+
 ## License
 
-TBD
+[MIT](LICENSE)
