@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import PokerTable from "@/components/poker/PokerTable";
 import { useGame } from "@/hooks/useGame";
-import { PlayerAction } from "@/lib/constants";
+import { PlayerAction, STRK_TOKEN_ADDRESS } from "@/lib/constants";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 
 export default function SpectatePage() {
@@ -14,6 +14,17 @@ export default function SpectatePage() {
 
   const { table, seats, hand, playerHands, communityCards, loading, error } =
     useGame(tableId);
+
+  const isPrivacyMode = useMemo(() => {
+    if (!table) return false;
+    try {
+      const strk = "0x" + STRK_TOKEN_ADDRESS.slice(2).replace(/^0+/, "").toLowerCase();
+      const tbl = "0x" + table.tokenAddress.slice(2).replace(/^0+/, "").toLowerCase();
+      return tbl === strk;
+    } catch {
+      return false;
+    }
+  }, [table]);
 
   const particleStyles = useMemo(
     () =>
@@ -63,6 +74,11 @@ export default function SpectatePage() {
             <div className="hidden brand-panel px-3 py-1 font-retro-display text-[9px] text-white md:block">
               TABLE: <span className="text-[var(--secondary)]">#{tableId}</span>
             </div>
+            {isPrivacyMode && (
+              <div className="hidden bg-purple-600/80 px-3 py-1 font-retro-display text-[9px] text-white md:block pixel-border-sm">
+                PRIVACY MODE
+              </div>
+            )}
           </div>
 
           <div className="flex items-center space-x-4 md:space-x-6">
@@ -94,6 +110,7 @@ export default function SpectatePage() {
             onAction={(_action: PlayerAction, _amount: bigint) => {}}
             onReady={() => {}}
             onJoin={() => {}}
+            isPrivacyMode={isPrivacyMode}
           />
 
           <Link
@@ -150,6 +167,11 @@ export default function SpectatePage() {
                 <span className="text-white/60">Phase:</span>
                 <span>{hand?.phase || "Waiting"}</span>
               </div>
+              {isPrivacyMode && (
+                <div className="mt-2 border-t border-white/10 pt-2 text-purple-400">
+                  Chip balances shielded via Tongo
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -169,7 +191,7 @@ export default function SpectatePage() {
               </span>
               <span className="text-xl text-black">◉</span>
               <span className="font-retro-display text-lg italic tracking-widest text-black">
-                SPECTATING
+                {isPrivacyMode ? "PRIVATE TABLE" : "SPECTATING"}
               </span>
               <span className="text-xl text-black">◉</span>
               <span className="font-retro-display text-lg italic tracking-widest text-black">

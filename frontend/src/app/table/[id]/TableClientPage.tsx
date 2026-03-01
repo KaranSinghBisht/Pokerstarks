@@ -10,7 +10,9 @@ import { useGameOrchestrator } from "@/hooks/useGameOrchestrator";
 import { useStarknet } from "@/providers/StarknetProvider";
 import { useTongo } from "@/hooks/useTongo";
 import { useChipToken } from "@/hooks/useChipToken";
-import { PlayerAction } from "@/lib/constants";
+import { usePrivateBuyIn } from "@/hooks/usePrivateBuyIn";
+import { usePrivateCashout } from "@/hooks/usePrivateCashout";
+import { PlayerAction, STRK_TOKEN_ADDRESS } from "@/lib/constants";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 
 export default function TablePage() {
@@ -21,6 +23,8 @@ export default function TablePage() {
   const { address, account, isConnected, connect, error: walletError } = useStarknet();
   const tongo = useTongo(address, account);
   const chip = useChipToken(address, account);
+  const privateBuyIn = usePrivateBuyIn(tongo, account ?? null, address ?? null);
+  const privateCashout = usePrivateCashout(tongo);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const {
@@ -47,6 +51,17 @@ export default function TablePage() {
     !!table &&
     !!localAddress &&
     table.creator.toLowerCase() === localAddress.toLowerCase();
+
+  // Detect privacy table (STRK token)
+  const isPrivacyTable = !!table && (() => {
+    try {
+      const strk = "0x" + STRK_TOKEN_ADDRESS.slice(2).replace(/^0+/, "").toLowerCase();
+      const tbl = "0x" + table.tokenAddress.slice(2).replace(/^0+/, "").toLowerCase();
+      return tbl === strk;
+    } catch {
+      return false;
+    }
+  })();
 
   const handleFillWithBots = useCallback(async () => {
     if (!table) return;
@@ -153,6 +168,30 @@ export default function TablePage() {
     [actions, table?.tokenAddress],
   );
 
+  const handlePrivateJoin = useCallback(
+    (seatIndex: number, buyIn: bigint) => {
+      setActionError(null);
+      privateBuyIn.privateBuyIn(tableId, seatIndex, buyIn, "0").catch((err) => {
+        setActionError(err instanceof Error ? err.message : "Private buy-in failed.");
+      });
+    },
+    [privateBuyIn, tableId],
+  );
+
+  const handlePrivateCashout = useCallback(() => {
+    if (!table) return;
+    const localSeat = seats.find(
+      (s) => s.isOccupied && s.player.toLowerCase() === localAddress.toLowerCase(),
+    );
+    if (!localSeat) return;
+    setActionError(null);
+    privateCashout.privateCashout(tableId, localSeat.chips, async () => {
+      await actions.leaveTable();
+    }).catch((err) => {
+      setActionError(err instanceof Error ? err.message : "Private cashout failed.");
+    });
+  }, [table, seats, localAddress, privateCashout, tableId, actions]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-white">
@@ -243,13 +282,16 @@ export default function TablePage() {
             localPlayerAddress={localAddress}
             onAction={handleAction}
             onReady={handleReady}
-            onJoin={handleJoin}
+            onJoin={isPrivacyTable && tongo.isAvailable && tongo.balance !== null && tongo.balance > 0n
+              ? handlePrivateJoin
+              : handleJoin}
             myHoleCards={myHoleCards}
             isProving={isProving}
             provingProgress={provingProgress}
             isHost={isHost}
             onFillWithBots={handleFillWithBots}
             fillingBots={fillingBots}
+            isPrivacyMode={isPrivacyTable}
           />
         </div>
 
@@ -257,6 +299,59 @@ export default function TablePage() {
           <div className="w-full overflow-hidden rounded-sm brand-panel">
             <TongoWallet tongo={tongo} walletAddress={localAddress} />
           </div>
+
+          {/* Private Buy-In Progress */}
+          {privateBuyIn.loading && (
+            <div className="w-full border-l-4 border-purple-500 bg-purple-900/20 p-3 font-retro-display text-[9px] text-purple-200">
+              <div className="text-[10px] text-purple-300 mb-2">PRIVATE BUY-IN</div>
+              <div className="space-y-1">
+                <div className={privateBuyIn.step === "withdrawing" ? "text-purple-300" : "text-green-400"}>
+                  {privateBuyIn.step === "withdrawing" ? ">> UNSHIELDING STRK..." : "UNSHIELDED"}
+                </div>
+                <div className={privateBuyIn.step === "joining" ? "text-purple-300" : "text-slate-500"}>
+                  {privateBuyIn.step === "joining" ? ">> JOINING TABLE..." : "JOINING TABLE"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Private Cashout Progress */}
+          {privateCashout.loading && (
+            <div className="w-full border-l-4 border-purple-500 bg-purple-900/20 p-3 font-retro-display text-[9px] text-purple-200">
+              <div className="text-[10px] text-purple-300 mb-2">SHIELD WINNINGS</div>
+              <div className="space-y-1">
+                <div className={privateCashout.step === "cashing-out" ? "text-purple-300" : "text-green-400"}>
+                  {privateCashout.step === "cashing-out" ? ">> LEAVING TABLE..." : "LEFT TABLE"}
+                </div>
+                <div className={privateCashout.step === "shielding" ? "text-purple-300" : "text-slate-500"}>
+                  {privateCashout.step === "shielding" ? ">> SHIELDING STRK..." : "SHIELDING STRK"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Leave & Shield Button */}
+          {isPrivacyTable &&
+            tongo.isAvailable &&
+            table.state === "Waiting" &&
+            seats.some(
+              (s) => s.isOccupied && s.player.toLowerCase() === localAddress.toLowerCase(),
+            ) &&
+            !privateCashout.loading && (
+              <button
+                onClick={handlePrivateCashout}
+                className="w-full bg-purple-700 py-3 font-retro-display text-[10px] text-white pixel-border-sm transition-colors hover:bg-purple-600"
+              >
+                LEAVE &amp; SHIELD
+              </button>
+            )}
+
+          {(privateBuyIn.error || privateCashout.error) && (
+            <div className="w-full border-l-4 border-red-500 bg-red-500/10 p-3 font-retro-display text-[8px] text-red-200">
+              {privateBuyIn.error || privateCashout.error}
+            </div>
+          )}
+
           <div className="min-h-0 w-full flex-1 overflow-hidden rounded-sm brand-panel">
             <ChatPanel tableId={tableId} />
           </div>

@@ -15,6 +15,7 @@ interface PlayerSeatProps {
   localHoleCards?: [number, number] | null;
   canJoin?: boolean;
   onJoin?: () => void;
+  isPrivacyMode?: boolean;
 }
 
 const BOT_EMOJIS = ["😎", "🤖", "👾", "🎲", "🕹️", "🃏"];
@@ -30,6 +31,7 @@ export default function PlayerSeat({
   localHoleCards,
   canJoin,
   onJoin,
+  isPrivacyMode,
 }: PlayerSeatProps) {
   if (!seat.isOccupied) {
     return (
@@ -46,14 +48,16 @@ export default function PlayerSeat({
           disabled={!canJoin}
           className={`flex h-14 w-14 items-center justify-center border-4 bg-black/35 pixel-border-sm ${
             canJoin
-              ? "border-[var(--secondary)]/60 text-[var(--secondary)] transition-colors hover:bg-[var(--secondary)]/10"
+              ? isPrivacyMode
+                ? "border-purple-500/60 text-purple-400 transition-colors hover:bg-purple-500/10"
+                : "border-[var(--secondary)]/60 text-[var(--secondary)] transition-colors hover:bg-[var(--secondary)]/10"
               : "border-white/20 text-white/30"
           }`}
         >
-          {canJoin ? "+" : "□"}
+          {canJoin && isPrivacyMode ? "\u{1F6E1}" : canJoin ? "+" : "\u25A1"}
         </button>
-        <span className="font-retro-display text-[8px] text-white/45">
-          {canJoin ? "JOIN" : "EMPTY"}
+        <span className={`font-retro-display text-[8px] ${isPrivacyMode && canJoin ? "text-purple-400" : "text-white/45"}`}>
+          {canJoin ? (isPrivacyMode ? "PRIVATE JOIN" : "JOIN") : "EMPTY"}
         </span>
       </div>
     );
@@ -95,7 +99,11 @@ export default function PlayerSeat({
         <span className="block font-retro-display text-[8px] text-white/85">
           {isLocalPlayer ? "YOU" : shortAddr}
         </span>
-        <span className="font-retro-display text-[9px] text-white">{chips} CHIP</span>
+        {isPrivacyMode && !isLocalPlayer ? (
+          <span className="font-retro-display text-[9px] text-purple-400">SHIELDED</span>
+        ) : (
+          <span className="font-retro-display text-[9px] text-white">{chips} CHIP</span>
+        )}
       </div>
 
       {isCurrentTurn && (
