@@ -103,6 +103,8 @@ function parseTable(models: Record<string, unknown>): TableData | null {
     isPrivate: asBool(t.is_private),
     inviteCodeHash: String(t.invite_code_hash ?? "0"),
     tokenAddress: asAddress(t.token_address),
+    shuffleVerifier: asAddress(t.shuffle_verifier),
+    decryptVerifier: asAddress(t.decrypt_verifier),
   };
 }
 

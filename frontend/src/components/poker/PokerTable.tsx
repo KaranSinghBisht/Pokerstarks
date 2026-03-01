@@ -11,7 +11,13 @@ import type {
   PlayerHandData,
   CommunityCardsData,
 } from "@/lib/types";
-import { PlayerAction, GamePhase } from "@/lib/constants";
+import {
+  PlayerAction,
+  GamePhase,
+  STRK_TOKEN_ADDRESS,
+  CANONICAL_SHUFFLE_VERIFIER,
+  CANONICAL_DECRYPT_VERIFIER,
+} from "@/lib/constants";
 
 const SEAT_POSITIONS = [
   { top: "90%", left: "50%" }, // seat 0
@@ -38,6 +44,7 @@ interface PokerTableProps {
   isHost?: boolean;
   onFillWithBots?: () => void;
   fillingBots?: boolean;
+  isPrivacyMode?: boolean;
 }
 
 export default function PokerTable({
@@ -56,11 +63,28 @@ export default function PokerTable({
   isHost,
   onFillWithBots,
   fillingBots,
+  isPrivacyMode: isPrivacyModeProp,
 }: PokerTableProps) {
   const localSeat = seats.find((s) => s.isOccupied && s.player === localPlayerAddress);
   const localPlayerHand = playerHands.find(
     (ph) => localSeat && ph.seatIndex === localSeat.seatIndex,
   );
+
+  // Derive privacy mode from prop or token address
+  const isPrivacyMode = isPrivacyModeProp ?? (() => {
+    try {
+      const strk = "0x" + STRK_TOKEN_ADDRESS.slice(2).replace(/^0+/, "").toLowerCase();
+      const tbl = "0x" + table.tokenAddress.slice(2).replace(/^0+/, "").toLowerCase();
+      return tbl === strk;
+    } catch {
+      return false;
+    }
+  })();
+
+  // Detect non-canonical verifier contracts
+  const isUntrustedVerifier =
+    table.shuffleVerifier !== CANONICAL_SHUFFLE_VERIFIER ||
+    table.decryptVerifier !== CANONICAL_DECRYPT_VERIFIER;
 
   const isBettingPhase =
     hand?.phase === GamePhase.BettingPreflop ||
@@ -74,6 +98,11 @@ export default function PokerTable({
 
   return (
     <div className="relative mx-auto w-full max-w-6xl pb-36">
+      {isUntrustedVerifier && (
+        <div className="mb-3 border-2 border-red-500 bg-red-900/80 px-4 py-3 font-retro-display text-[9px] text-red-200 pixel-border-sm">
+          UNVERIFIED TABLE — Verifier contracts do not match canonical addresses. Shuffle or decrypt proofs may not be validated. Join at your own risk.
+        </div>
+      )}
       <div className="relative aspect-[2/1] w-full border-4 border-black bg-[var(--felt-border)] p-4 pixel-border">
         <div className="felt-gradient absolute inset-4 rounded-full border-[10px] border-[#5d4037] shadow-2xl shadow-black/50">
           <div className="pointer-events-none absolute inset-2 rounded-full border-4 border-white/10" />
@@ -106,9 +135,21 @@ export default function PokerTable({
           </div>
 
           {hand && (
-            <div className="absolute left-1/2 top-3 -translate-x-1/2">
+            <div className="absolute left-1/2 top-3 -translate-x-1/2 flex items-center gap-2">
               <span className="bg-black/70 px-3 py-1 font-retro-display text-[9px] uppercase text-slate-300 pixel-border-sm">
                 {hand.phase}
+              </span>
+              {isPrivacyMode && (
+                <span className="bg-purple-600/80 px-2 py-1 font-retro-display text-[8px] text-white pixel-border-sm">
+                  PRIVATE TABLE
+                </span>
+              )}
+            </div>
+          )}
+          {!hand && isPrivacyMode && (
+            <div className="absolute left-1/2 top-3 -translate-x-1/2">
+              <span className="bg-purple-600/80 px-2 py-1 font-retro-display text-[8px] text-white pixel-border-sm">
+                PRIVATE TABLE
               </span>
             </div>
           )}
@@ -216,6 +257,7 @@ export default function PokerTable({
             localHoleCards={seat.player === localPlayerAddress ? myHoleCards : undefined}
             canJoin={allowJoinSeat && !seat.isOccupied}
             onJoin={() => onJoin(i, table.minBuyIn)}
+            isPrivacyMode={isPrivacyMode}
           />
         );
       })}

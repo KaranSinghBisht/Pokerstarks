@@ -7,6 +7,11 @@ import { useStarknet } from "@/providers/StarknetProvider";
 import { useLobby } from "@/hooks/useLobby";
 import { useTongo } from "@/hooks/useTongo";
 import { useChipToken } from "@/hooks/useChipToken";
+import {
+  STRK_TOKEN_ADDRESS,
+  CANONICAL_SHUFFLE_VERIFIER,
+  CANONICAL_DECRYPT_VERIFIER,
+} from "@/lib/constants";
 import TongoWallet from "@/components/poker/TongoWallet";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 
@@ -14,6 +19,25 @@ import BrandWordmark from "@/components/brand/BrandWordmark";
 function normalizeAddress(addr: string): string {
   if (!addr.startsWith("0x")) return addr.toLowerCase();
   return "0x" + addr.slice(2).replace(/^0+/, "").toLowerCase();
+}
+
+/** Check if table uses STRK token (privacy mode) */
+function isPrivacyTable(tokenAddress: string): boolean {
+  try {
+    const normalized = "0x" + STRK_TOKEN_ADDRESS.slice(2).replace(/^0+/, "").toLowerCase();
+    const tableNorm = "0x" + tokenAddress.slice(2).replace(/^0+/, "").toLowerCase();
+    return tableNorm === normalized;
+  } catch {
+    return false;
+  }
+}
+
+/** Check if table uses canonical verifier contracts */
+function isTrustedVerifiers(shuffleVerifier: string, decryptVerifier: string): boolean {
+  return (
+    shuffleVerifier === CANONICAL_SHUFFLE_VERIFIER &&
+    decryptVerifier === CANONICAL_DECRYPT_VERIFIER
+  );
 }
 
 const ROOM_NAMES = [
@@ -60,7 +84,9 @@ export default function LobbyPage() {
     bigBlind: "10",
     minBuyIn: "100",
     maxBuyIn: "1000",
+    privacyMode: false,
   });
+  const [tableFilter, setTableFilter] = useState<"all" | "private" | "public">("all");
 
   // Reset auto-claim flag when wallet address changes (disconnect/reconnect)
   useEffect(() => {
@@ -95,12 +121,21 @@ export default function LobbyPage() {
   const handleCreate = async () => {
     try {
       setCreateError(null);
+      // For privacy mode (STRK, 18 decimals), form values are in human STRK.
+      // Convert to wei by multiplying by 1e18.
+      // For chip mode (decimals=0), values are raw chip counts.
+      const STRK_DECIMALS = 10n ** 18n;
+      const toOnChain = (v: string) => {
+        const raw = BigInt(v || "0");
+        return createForm.privacyMode ? raw * STRK_DECIMALS : raw;
+      };
       await createTable({
         maxPlayers: Math.max(2, Math.min(6, Number(createForm.maxPlayers) || 6)),
-        smallBlind: BigInt(createForm.smallBlind || "0"),
-        bigBlind: BigInt(createForm.bigBlind || "0"),
-        minBuyIn: BigInt(createForm.minBuyIn || "0"),
-        maxBuyIn: BigInt(createForm.maxBuyIn || "0"),
+        smallBlind: toOnChain(createForm.smallBlind),
+        bigBlind: toOnChain(createForm.bigBlind),
+        minBuyIn: toOnChain(createForm.minBuyIn),
+        maxBuyIn: toOnChain(createForm.maxBuyIn),
+        ...(createForm.privacyMode ? { tokenAddress: STRK_TOKEN_ADDRESS } : {}),
       });
       setShowCreate(false);
     } catch (err) {
@@ -242,14 +277,21 @@ export default function LobbyPage() {
           <div>
             <h2 className="font-retro-display text-xl text-white">GAME LOBBY</h2>
             <div className="mt-3 flex gap-4">
-              <span className="border-b-4 border-[var(--primary)] pb-1 font-retro-display text-[9px] text-[var(--primary)]">
-                ALL TABLES
-              </span>
+              {(["all", "private", "public"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setTableFilter(f)}
+                  className={`pb-1 font-retro-display text-[9px] ${
+                    tableFilter === f
+                      ? "border-b-4 border-[var(--primary)] text-[var(--primary)]"
+                      : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  {f === "all" ? "ALL TABLES" : f === "private" ? "PRIVATE" : "PUBLIC"}
+                </button>
+              ))}
               <span className="pb-1 font-retro-display text-[9px] text-slate-500">
                 TOURNAMENTS (SOON)
-              </span>
-              <span className="pb-1 font-retro-display text-[9px] text-slate-500">
-                MY GAMES (SOON)
               </span>
             </div>
           </div>
@@ -278,18 +320,38 @@ export default function LobbyPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-10 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {tables.map((table, idx) => {
+            {tables
+              .filter((t) => {
+                if (tableFilter === "private") return isPrivacyTable(t.tokenAddress);
+                if (tableFilter === "public") return !isPrivacyTable(t.tokenAddress);
+                return true;
+              })
+              .map((table, idx) => {
               const isWaiting = table.state === "Waiting";
+              const isShielded = isPrivacyTable(table.tokenAddress);
+              const isTrusted = isTrustedVerifiers(table.shuffleVerifier, table.decryptVerifier);
               const roomName = ROOM_NAMES[idx % ROOM_NAMES.length];
               const roomBackground = ROOM_BACKGROUNDS[idx % ROOM_BACKGROUNDS.length];
               return (
                 <div key={table.tableId} className="group relative pt-8">
-                  <div
-                    className={`absolute -top-4 left-1/2 z-10 -translate-x-1/2 px-3 py-1 font-retro-display text-[9px] text-white pixel-border ${
-                      isWaiting ? "bg-green-500" : "bg-red-500"
-                    }`}
-                  >
-                    {isWaiting ? "WAITING" : "IN PROGRESS"}
+                  <div className="absolute -top-4 left-1/2 z-10 -translate-x-1/2 flex gap-2">
+                    <div
+                      className={`px-3 py-1 font-retro-display text-[9px] text-white pixel-border ${
+                        isWaiting ? "bg-green-500" : "bg-red-500"
+                      }`}
+                    >
+                      {isWaiting ? "WAITING" : "IN PROGRESS"}
+                    </div>
+                    {isShielded && (
+                      <div className="bg-purple-600 px-3 py-1 font-retro-display text-[9px] text-white pixel-border">
+                        SHIELDED
+                      </div>
+                    )}
+                    {!isTrusted && (
+                      <div className="bg-red-600 px-3 py-1 font-retro-display text-[9px] text-white pixel-border">
+                        UNVERIFIED
+                      </div>
+                    )}
                   </div>
 
                   <div className="cabinet-shape relative bg-slate-800 p-1 shadow-2xl border-x-8 border-t-8 border-slate-700 group-hover:border-[var(--primary)] transition-colors">
@@ -307,7 +369,9 @@ export default function LobbyPage() {
                       <div className="flex justify-between text-slate-400">
                         <span>BLINDS:</span>
                         <span className="text-[var(--secondary)]">
-                          {Number(table.smallBlind)}/{Number(table.bigBlind)}
+                          {isShielded
+                            ? `${Number(table.smallBlind) / 1e18}/${Number(table.bigBlind) / 1e18} STRK`
+                            : `${Number(table.smallBlind)}/${Number(table.bigBlind)}`}
                         </span>
                       </div>
                       <div className="flex justify-between text-slate-400">
@@ -318,7 +382,11 @@ export default function LobbyPage() {
                       </div>
                       <div className="flex justify-between text-slate-400">
                         <span>MIN BUY-IN:</span>
-                        <span className="text-white">{Number(table.minBuyIn)}</span>
+                        <span className="text-white">
+                          {isShielded
+                            ? `${Number(table.minBuyIn) / 1e18} STRK`
+                            : Number(table.minBuyIn)}
+                        </span>
                       </div>
 
                       {isWaiting ? (
@@ -347,6 +415,19 @@ export default function LobbyPage() {
                 NO TABLES YET. CREATE THE FIRST TABLE.
               </div>
             )}
+            {tables.length > 0 &&
+              !tables.some((t) =>
+                tableFilter === "private"
+                  ? isPrivacyTable(t.tokenAddress)
+                  : tableFilter === "public"
+                    ? !isPrivacyTable(t.tokenAddress)
+                    : false,
+              ) &&
+              tableFilter !== "all" && (
+                <div className="col-span-full bg-black/60 p-10 text-center font-retro-display text-xs text-slate-300 pixel-border border-black">
+                  NO {tableFilter === "private" ? "PRIVATE" : "PUBLIC"} TABLES FOUND.
+                </div>
+              )}
           </div>
         )}
       </main>
@@ -464,6 +545,43 @@ export default function LobbyPage() {
                   className="w-full border-4 border-black bg-slate-900 px-3 py-3 font-retro-display text-sm text-white outline-none focus:border-[var(--primary)]"
                 />
               </div>
+
+              <div
+                className={`flex items-center justify-between border-4 px-4 py-3 cursor-pointer transition-colors ${
+                  createForm.privacyMode
+                    ? "border-purple-500 bg-purple-900/30"
+                    : "border-black bg-slate-900"
+                }`}
+                onClick={() =>
+                  setCreateForm({ ...createForm, privacyMode: !createForm.privacyMode })
+                }
+              >
+                <div>
+                  <span className="font-retro-display text-[10px] text-white">
+                    PRIVACY MODE
+                  </span>
+                  <p className="font-retro-display text-[8px] text-slate-400 mt-1">
+                    Uses STRK via Tongo for shielded bankrolls
+                  </p>
+                </div>
+                <div
+                  className={`h-6 w-11 rounded-full transition-colors ${
+                    createForm.privacyMode ? "bg-purple-500" : "bg-slate-700"
+                  }`}
+                >
+                  <div
+                    className={`h-5 w-5 rounded-full bg-white transition-transform mt-0.5 ${
+                      createForm.privacyMode ? "translate-x-[22px]" : "translate-x-0.5"
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {createForm.privacyMode && (
+                <div className="border-l-4 border-purple-500 bg-purple-500/10 p-3 font-retro-display text-[8px] text-purple-200">
+                  Values above are in whole STRK (e.g. 5 = 5 STRK). Players can buy in privately via Tongo — bankroll stays hidden between sessions.
+                </div>
+              )}
 
               <button
                 type="submit"

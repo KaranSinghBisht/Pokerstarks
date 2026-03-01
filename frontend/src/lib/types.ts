@@ -19,6 +19,9 @@ export interface TableData {
   inviteCodeHash: string;
   // Token
   tokenAddress: string;
+  // Verifier contracts
+  shuffleVerifier: string;
+  decryptVerifier: string;
 }
 
 export interface SeatData {

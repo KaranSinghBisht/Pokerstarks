@@ -18,6 +18,12 @@ export const TONGO_STRK_RATE = 50000000000000000n;
 // localStorage key for the persisted Tongo private key
 export const TONGO_KEY_STORAGE_PREFIX = "pokerstarks.tongo.v1";
 
+// ─── Canonical Verifier Addresses (Sepolia) ───
+export const CANONICAL_SHUFFLE_VERIFIER =
+  "0x40309089f223e732973bed9b6956a2bcd4491a355d64d12f7a8824a606283f6";
+export const CANONICAL_DECRYPT_VERIFIER =
+  "0x3ff2d79aba6b812f0316d7660ee3bff353c7fb240c06e96e8fffb03e4b5233b";
+
 // Game phases matching Cairo GamePhase enum
 export enum GamePhase {
   Setup = "Setup",
