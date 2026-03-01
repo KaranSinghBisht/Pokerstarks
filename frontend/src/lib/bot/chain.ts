@@ -7,10 +7,17 @@ import { Account, RpcProvider, CallData } from "starknet";
 import { log } from "./log";
 import { SYSTEM_CONTRACTS } from "@/lib/contracts";
 
+const PUBLIC_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "";
+const TORII_PUBLIC_RPC_URL = process.env.NEXT_PUBLIC_TORII_RPC_URL || "";
+const CARTRIDGE_SEPOLIA = "https://api.cartridge.gg/x/starknet/sepolia";
+
 const RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_URL ||
-  process.env.NEXT_PUBLIC_TORII_RPC_URL ||
-  "http://localhost:5050";
+  process.env.BOT_RPC_URL ||
+  process.env.TORII_RPC_URL ||
+  ((PUBLIC_RPC_URL && PUBLIC_RPC_URL !== CARTRIDGE_SEPOLIA ? PUBLIC_RPC_URL : "") ||
+    TORII_PUBLIC_RPC_URL ||
+    PUBLIC_RPC_URL ||
+    "http://localhost:5050");
 
 export class BotChain {
   readonly account: Account;

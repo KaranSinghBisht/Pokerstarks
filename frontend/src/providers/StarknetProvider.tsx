@@ -281,35 +281,67 @@ function normalizeExecuteCall(call: ExecuteCallInput) {
   };
 }
 
-function toInjectedAccount(wallet: InjectedWallet, address: string): AccountInterface {
-  // Prefer the wallet's native Account object when available — it supports
-  // proper gas estimation (estimateInvokeFee) which prevents "out of gas"
-  // errors from Dojo world calls that are expensive to estimate.
-  if (wallet.account && typeof wallet.account.execute === "function") {
-    return wallet.account;
-  }
+function isRateLimitedRpcError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("too many requests") ||
+    normalized.includes("onfinality") ||
+    normalized.includes("tip statistics") ||
+    normalized.includes("-32029")
+  );
+}
 
-  // Fallback: bare request-based wrapper for wallets without .account
+function normalizeCallsForWalletRequest(callsInput: ExecuteCallInput | ExecuteCallInput[]) {
+  return (Array.isArray(callsInput) ? callsInput : [callsInput]).reduce<
+    Array<{ contract_address: string; entry_point: string; calldata?: string[] }>
+  >((acc, call) => {
+    const normalized = normalizeExecuteCall(call);
+    if (normalized) acc.push(normalized);
+    return acc;
+  }, []);
+}
+
+function toInjectedAccount(wallet: InjectedWallet, address: string): AccountInterface {
+  // Request-based execute path used for fallback and wallets without `.account`.
+  const executeViaWalletRequest = async (
+    callsInput: ExecuteCallInput | ExecuteCallInput[],
+  ) => {
+    const calls = normalizeCallsForWalletRequest(callsInput);
+    if (calls.length === 0) {
+      throw new Error("Invalid transaction calls for wallet execute.");
+    }
+    return wallet.request({
+      type: "wallet_addInvokeTransaction",
+      params: { calls },
+    });
+  };
+
   const account = {
     address,
-    async execute(callsInput: ExecuteCallInput | ExecuteCallInput[]) {
-      const calls = (Array.isArray(callsInput) ? callsInput : [callsInput]).reduce<
-        Array<{ contract_address: string; entry_point: string; calldata?: string[] }>
-      >((acc, call) => {
-        const normalized = normalizeExecuteCall(call);
-        if (normalized) acc.push(normalized);
-        return acc;
-      }, []);
-
-      if (calls.length === 0) {
-        throw new Error("Invalid transaction calls for wallet execute.");
+    async execute(
+      callsInput: ExecuteCallInput | ExecuteCallInput[],
+      _abis?: unknown,
+      _details?: unknown,
+    ) {
+      // Prefer native injected account when available.
+      const nativeAccount = wallet.account;
+      if (nativeAccount && typeof nativeAccount.execute === "function") {
+        try {
+          return await nativeAccount.execute(callsInput as never);
+        } catch (err) {
+          // Some wallet/provider combos rate-limit fee-tip analysis on shared
+          // RPCs (often showing OnFinality -32029). Retry via wallet request API.
+          if (!isRateLimitedRpcError(err)) {
+            throw err;
+          }
+          console.warn(
+            "[wallet] Native execute hit RPC rate limit, retrying via wallet_addInvokeTransaction.",
+          );
+        }
       }
 
-      const result = await wallet.request({
-        type: "wallet_addInvokeTransaction",
-        params: { calls },
-      });
-      return result;
+      return executeViaWalletRequest(callsInput);
     },
   };
 

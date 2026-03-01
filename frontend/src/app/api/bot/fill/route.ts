@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const result = await fillWithBots(tableId, {
       strategy: body.strategy ?? "passive",
       buyIn: body.buyIn ? BigInt(body.buyIn) : undefined,
-      pollMs: body.pollMs ?? 2000,
+      pollMs: Math.max(500, Math.min(30000, Number(body.pollMs) || 2000)),
     });
 
     return NextResponse.json({

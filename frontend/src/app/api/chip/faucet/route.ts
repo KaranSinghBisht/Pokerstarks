@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { Account, RpcProvider, CallData } from "starknet";
 
+const PUBLIC_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "";
+const TORII_PUBLIC_RPC_URL = process.env.NEXT_PUBLIC_TORII_RPC_URL || "";
+const CARTRIDGE_SEPOLIA = "https://api.cartridge.gg/x/starknet/sepolia";
+
 const RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_URL ||
-  process.env.NEXT_PUBLIC_TORII_RPC_URL ||
-  "http://localhost:5050";
+  process.env.CHIP_FAUCET_RPC_URL ||
+  process.env.TORII_RPC_URL ||
+  ((PUBLIC_RPC_URL && PUBLIC_RPC_URL !== CARTRIDGE_SEPOLIA ? PUBLIC_RPC_URL : "") ||
+    TORII_PUBLIC_RPC_URL ||
+    PUBLIC_RPC_URL ||
+    "http://localhost:5050");
 
 const CHIP_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_CHIP_TOKEN_ADDRESS || "";
 const DEPLOYER_PRIVATE_KEY = process.env.CHIP_DEPLOYER_PRIVATE_KEY || "";

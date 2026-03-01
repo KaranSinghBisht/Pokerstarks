@@ -255,7 +255,7 @@ pub mod lobby_system {
             let mut j: u8 = 0;
             while j < table.max_players {
                 let seat: Seat = world.read_model((table_id, j));
-                if seat.is_occupied {
+                if seat.is_occupied && !seat.is_sitting_out {
                     if !seat.is_ready {
                         all_ready = false;
                     }

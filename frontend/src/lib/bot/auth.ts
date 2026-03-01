@@ -13,7 +13,10 @@ const BOT_API_SECRET = process.env.BOT_API_SECRET; // server-only, no NEXT_PUBLI
 
 export function isAllowedBotRequest(request: Request): boolean {
   // Dev mode: no secret configured → allow everything
-  if (!BOT_API_SECRET) return true;
+  if (!BOT_API_SECRET) {
+    console.warn("[bot-auth] BOT_API_SECRET is not set — bot API is open to all requests. Set it in production.");
+    return true;
+  }
 
   // Require bearer token
   const authHeader = request.headers.get("authorization");

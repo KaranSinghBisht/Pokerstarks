@@ -218,7 +218,7 @@ pub mod game_setup_system {
             let mut i: u8 = 0;
             while i < table.max_players {
                 let seat: Seat = world.read_model((hand.table_id, i));
-                if seat.is_occupied && seat.player == caller {
+                if seat.is_occupied && !seat.is_sitting_out && seat.player == caller {
                     seat_idx = i;
                     break;
                 }
@@ -228,6 +228,7 @@ pub mod game_setup_system {
 
             // Store the public key
             let mut ph: PlayerHand = world.read_model((hand_id, seat_idx));
+            assert(ph.player != 0.try_into().unwrap(), 'not a hand participant');
             // A-09 NOTE: x==0 is safe as a sentinel because on Grumpkin (y^2 = x^3 - 17),
             // x=0 requires y^2 = -17 which has no solution in the field.
             // Therefore x=0 is provably never a valid public key coordinate.

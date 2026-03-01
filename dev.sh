@@ -283,14 +283,35 @@ if [ "$MODE" = "sepolia" ]; then
 
     echo -e "  ${GREEN}.env.local found with Sepolia config${NC}"
 
-    # ─── Start local Torii for Sepolia (Slot deployment is rate-limited) ─────
+    # ─── Local Torii for Sepolia (needed for real-time game state sync) ──────
     WORLD_ADDRESS=$(grep "^NEXT_PUBLIC_WORLD_ADDRESS=" "$ENV_FILE" | cut -d= -f2)
-    SEPOLIA_RPC=$(grep "^NEXT_PUBLIC_RPC_URL=" "$ENV_FILE" | cut -d= -f2)
-    SEPOLIA_RPC="${SEPOLIA_RPC:-https://api.cartridge.gg/x/starknet/sepolia}"
 
     if [ -n "$WORLD_ADDRESS" ] && [ "$WORLD_ADDRESS" != "0x0" ]; then
+        # Prefer TORII_RPC_URL (high-throughput) over NEXT_PUBLIC_RPC_URL (Cartridge, rate-limited)
+        SEPOLIA_RPC=$(grep "^TORII_RPC_URL=" "$ENV_FILE" | cut -d= -f2)
+        ROOT_ENV_FILE="$ROOT_DIR/.env"
+        ROOT_TORII_RPC=""
+        if [ -f "$ROOT_ENV_FILE" ]; then
+            ROOT_TORII_RPC=$(grep "^TORII_RPC_URL=" "$ROOT_ENV_FILE" | cut -d= -f2)
+        fi
+        if { [ -z "$SEPOLIA_RPC" ] || [[ "$SEPOLIA_RPC" == */demo ]]; } && [ -n "$ROOT_TORII_RPC" ] && [[ "$ROOT_TORII_RPC" != */demo ]]; then
+            SEPOLIA_RPC="$ROOT_TORII_RPC"
+            update_env "TORII_RPC_URL" "$SEPOLIA_RPC" "$ENV_FILE"
+            echo -e "       Synced TORII_RPC_URL from ${CYAN}.env${NC} -> ${CYAN}frontend/.env.local${NC}"
+        fi
+        if [ -z "$SEPOLIA_RPC" ]; then
+            SEPOLIA_RPC=$(grep "^NEXT_PUBLIC_RPC_URL=" "$ENV_FILE" | cut -d= -f2)
+        fi
+        SEPOLIA_RPC="${SEPOLIA_RPC:-https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/KEmw2v8CxO5WAqHZiM3SZ8Sd5WepP8R-}"
+
+        if [[ "$SEPOLIA_RPC" == *"/demo" ]]; then
+            echo -e "  ${YELLOW}[!] Using shared Alchemy demo key (can rate-limit under load).${NC}"
+            echo -e "      Set ${CYAN}TORII_RPC_URL${NC} in ${CYAN}frontend/.env.local${NC} with your own RPC key."
+        fi
+
         echo -e "  ${GREEN}[T]${NC} Starting local Torii indexer for Sepolia..."
-        TORII_CMD=(torii --world "$WORLD_ADDRESS" --rpc "$SEPOLIA_RPC" --indexing.world_block 6810510 --http.port 8081)
+        echo -e "       RPC: ${CYAN}${SEPOLIA_RPC}${NC}"
+        TORII_CMD=(torii --world "$WORLD_ADDRESS" --rpc "$SEPOLIA_RPC" --indexing.world_block 6810510 --indexing.polling_interval 2000 --http.port 8081)
         TORII_HELP="$(torii --help 2>&1 || true)"
         if printf '%s' "$TORII_HELP" | grep -q -- "--http.cors_origins"; then
             TORII_CMD+=(--http.cors_origins "*")
@@ -299,8 +320,22 @@ if [ "$MODE" = "sepolia" ]; then
         PIDS+=($!)
         echo -e "       PID: $!  →  ${CYAN}logs/torii.log${NC}"
 
-        # Point frontend to local Torii
         update_env "NEXT_PUBLIC_TORII_URL" "http://localhost:8081" "$ENV_FILE"
+
+        # Keep frontend/server transaction RPC aligned with the high-throughput
+        # indexer RPC when these fields are still on the shared Cartridge endpoint.
+        CURRENT_PUBLIC_RPC=$(grep "^NEXT_PUBLIC_RPC_URL=" "$ENV_FILE" | cut -d= -f2)
+        CURRENT_PUBLIC_TORII_RPC=$(grep "^NEXT_PUBLIC_TORII_RPC_URL=" "$ENV_FILE" | cut -d= -f2)
+        CARTRIDGE_RPC="https://api.cartridge.gg/x/starknet/sepolia"
+
+        if [ -z "$CURRENT_PUBLIC_TORII_RPC" ] || [ "$CURRENT_PUBLIC_TORII_RPC" = "$CARTRIDGE_RPC" ] || [[ "$CURRENT_PUBLIC_TORII_RPC" == */demo ]]; then
+            update_env "NEXT_PUBLIC_TORII_RPC_URL" "$SEPOLIA_RPC" "$ENV_FILE"
+            echo -e "       Set NEXT_PUBLIC_TORII_RPC_URL -> ${CYAN}${SEPOLIA_RPC}${NC}"
+        fi
+        if [ -z "$CURRENT_PUBLIC_RPC" ] || [ "$CURRENT_PUBLIC_RPC" = "$CARTRIDGE_RPC" ] || [[ "$CURRENT_PUBLIC_RPC" == */demo ]]; then
+            update_env "NEXT_PUBLIC_RPC_URL" "$SEPOLIA_RPC" "$ENV_FILE"
+            echo -e "       Set NEXT_PUBLIC_RPC_URL -> ${CYAN}${SEPOLIA_RPC}${NC}"
+        fi
 
         echo -n "       Waiting for Torii..."
         for i in $(seq 1 30); do
