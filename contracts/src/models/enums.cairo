@@ -41,3 +41,28 @@ pub enum MessageType {
     Emote,
     System,
 }
+
+#[derive(Serde, Copy, Drop, Introspect, PartialEq, Debug, DojoStore, Default)]
+pub enum MatchStatus {
+    #[default]
+    Pending,
+    InProgress,
+    Complete,
+}
+
+#[derive(Serde, Copy, Drop, Introspect, PartialEq, Debug, DojoStore, Default)]
+pub enum AgentType {
+    #[default]
+    Human,
+    Bot,
+    Agent,
+}
+
+#[derive(Serde, Copy, Drop, Introspect, PartialEq, Debug, DojoStore, Default)]
+pub enum ChallengeStatus {
+    #[default]
+    Pending,
+    Accepted,
+    Declined,
+    Expired,
+}

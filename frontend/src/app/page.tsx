@@ -150,6 +150,12 @@ export default function LandingPage() {
           >
             Lobby
           </Link>
+          <Link
+            href="/arena"
+            className="hidden font-retro-display text-[10px] uppercase tracking-widest brand-link md:block"
+          >
+            Arena
+          </Link>
           <button
             onClick={isConnected ? disconnect : () => setShowWalletSelector(true)}
             disabled={connecting}

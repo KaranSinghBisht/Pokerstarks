@@ -5,6 +5,8 @@ pub mod models {
     pub mod deck;
     pub mod card;
     pub mod chat;
+    pub mod arena;
+    pub mod egs;
 }
 
 pub mod systems {
@@ -17,6 +19,8 @@ pub mod systems {
     pub mod settle;
     pub mod chat;
     pub mod timeout;
+    pub mod arena;
+    pub mod egs;
 }
 
 pub mod utils {
