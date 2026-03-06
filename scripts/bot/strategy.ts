@@ -10,7 +10,7 @@
 import { log } from "./log.js";
 import type { HandData, PlayerHandData, SeatData, CommunityCardsData } from "./state.js";
 
-export type StrategyMode = "passive" | "aggressive" | "random";
+export type StrategyMode = "passive" | "aggressive" | "random" | "llm";
 
 // PlayerAction enum values matching Cairo
 const Action = {
@@ -52,6 +52,10 @@ export function decideBettingAction(
       return aggressiveStrategy(toCall, myChips, pot, currentBet, hand);
     case "random":
       return randomStrategy(toCall, myChips, pot, currentBet);
+    case "llm":
+      // LLM strategy is async — handled separately in index.ts
+      // This fallback should never be reached
+      return aggressiveStrategy(toCall, myChips, pot, currentBet, hand);
   }
 }
 

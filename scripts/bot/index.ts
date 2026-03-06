@@ -12,14 +12,16 @@
  * Options:
  *   --table         Table ID to join
  *   --seat          Seat index (0-5)
- *   --strategy      passive | aggressive | random (default: passive)
- *   --buy-in        Buy-in amount (default: table minimum)
- *   --private-key   Katana account private key
- *   --address       Katana account address
- *   --rpc-url       RPC URL (default: http://localhost:5050)
- *   --torii-url     Torii URL (default: http://localhost:8080)
- *   --world         World contract address (from manifest)
- *   --poll-ms       Poll interval in ms (default: 2000)
+ *   --strategy        passive | aggressive | random | llm (default: passive)
+ *   --personality     gto | bluffer | conservative (default: gto, llm only)
+ *   --reasoning-port  HTTP port for LLM reasoning endpoint (default: disabled)
+ *   --buy-in          Buy-in amount (default: table minimum)
+ *   --private-key     Katana account private key
+ *   --address         Katana account address
+ *   --rpc-url         RPC URL (default: http://localhost:5050)
+ *   --torii-url       Torii URL (default: http://localhost:8080)
+ *   --world           World contract address (from manifest)
+ *   --poll-ms         Poll interval in ms (default: 2000)
  */
 
 import { readFileSync } from "fs";
@@ -32,6 +34,7 @@ import { BotChain, loadSystemAddresses } from "./chain.js";
 import { StateReader, type GameState, type HandData, type PlayerHandData, type SeatData } from "./state.js";
 import { generateProof } from "./prover.js";
 import { decideBettingAction, type StrategyMode } from "./strategy.js";
+import { decideLLMAction, startReasoningServer, type Personality } from "./llm-strategy.js";
 import { log } from "./log.js";
 import {
   computeAggregateKey,
@@ -56,6 +59,8 @@ interface BotConfig {
   tableId: number;
   seatIndex: number;
   strategy: StrategyMode;
+  personality: Personality;
+  reasoningPort: number;
   buyIn: bigint;
   privateKey: string;
   address: string;
@@ -77,14 +82,26 @@ Required:
   --address       Katana account address
 
 Optional:
-  --strategy      passive | aggressive | random (default: passive)
-  --buy-in        Buy-in amount (default: table minimum)
-  --rpc-url       RPC URL (default: http://localhost:5050)
-  --torii-url     Torii URL (default: http://localhost:8080)
-  --world         World contract address (default: contracts/manifest_dev.json)
-  --poll-ms       Poll interval in ms (default: 2000)
-  -h, --help      Show this help message
+  --strategy        passive | aggressive | random | llm (default: passive)
+  --personality     gto | bluffer | conservative (default: gto, only for --strategy llm)
+  --reasoning-port  HTTP port to expose LLM reasoning (default: 0 = disabled)
+  --buy-in          Buy-in amount (default: table minimum)
+  --rpc-url         RPC URL (default: http://localhost:5050)
+  --torii-url       Torii URL (default: http://localhost:8080)
+  --world           World contract address (default: contracts/manifest_dev.json)
+  --poll-ms         Poll interval in ms (default: 2000)
+  -h, --help        Show this help message
+
+Environment:
+  ANTHROPIC_API_KEY  Required for --strategy llm
 `;
+
+const VALID_PERSONALITIES = new Set(["gto", "bluffer", "conservative"]);
+function validatePersonality(value: string): Personality {
+  if (VALID_PERSONALITIES.has(value)) return value as Personality;
+  console.error(`Invalid --personality "${value}". Must be: gto, bluffer, conservative`);
+  process.exit(1);
+}
 
 function parseArgs(): BotConfig {
   const args = process.argv.slice(2);
@@ -122,6 +139,8 @@ function parseArgs(): BotConfig {
     tableId: parseInt(get("--table")),
     seatIndex: parseInt(get("--seat")),
     strategy: get("--strategy", "passive") as StrategyMode,
+    personality: validatePersonality(get("--personality", "gto")),
+    reasoningPort: parseInt(get("--reasoning-port", "0")),
     buyIn: BigInt(get("--buy-in", "0")),
     privateKey: get("--private-key"),
     address: get("--address"),
@@ -555,7 +574,12 @@ class PokerBot {
 
     log.phase(`Betting — ${hand.phase} (my turn)`);
 
-    const decision = decideBettingAction(this.config.strategy, hand, myPH, mySeat);
+    let decision;
+    if (this.config.strategy === "llm") {
+      decision = await decideLLMAction(hand, myPH, mySeat, gs, this.config.personality);
+    } else {
+      decision = decideBettingAction(this.config.strategy, hand, myPH, mySeat);
+    }
     log.action(`Decision: ${decision.label}`);
     await this.chain.playerAction(hand.handId, decision.action, decision.amount);
     this.bettingActedPhase = phaseKey;
@@ -694,6 +718,9 @@ function sleep(ms: number): Promise<void> {
 // ───────────────────── Entry Point ─────────────────────
 
 const config = parseArgs();
+if (config.strategy === "llm" && config.reasoningPort > 0) {
+  startReasoningServer(config.reasoningPort);
+}
 const bot = new PokerBot(config);
 bot.run().catch((err) => {
   log.error(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
