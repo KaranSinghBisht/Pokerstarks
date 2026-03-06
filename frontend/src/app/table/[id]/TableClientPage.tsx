@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
 import PokerTable from "@/components/poker/PokerTable";
 import ChatPanel from "@/components/poker/ChatPanel";
 import TongoWallet from "@/components/poker/TongoWallet";
@@ -14,13 +15,16 @@ import { usePrivateBuyIn } from "@/hooks/usePrivateBuyIn";
 import { usePrivateCashout } from "@/hooks/usePrivateCashout";
 import { PlayerAction, STRK_TOKEN_ADDRESS } from "@/lib/constants";
 import BrandWordmark from "@/components/brand/BrandWordmark";
+import WalletSelector from "@/components/ui/WalletSelector";
+import WalletWarning from "@/components/ui/WalletWarning";
 
 export default function TablePage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const isSolo = searchParams.get("solo") === "true";
   const tableId = Number(params.id);
-  const { address, account, isConnected, connect, error: walletError } = useStarknet();
+  const { address, account, isConnected, connect, walletSource, error: walletError } = useStarknet();
+  const [showWalletSelector, setShowWalletSelector] = useState(false);
   const tongo = useTongo(address, account);
   const chip = useChipToken(address, account);
   const privateBuyIn = usePrivateBuyIn(tongo, account ?? null, address ?? null);
@@ -221,7 +225,10 @@ export default function TablePage() {
   }
 
   return (
-    <div className="min-h-screen overflow-hidden bg-transparent text-white font-retro-body">
+    <div className="min-h-screen overflow-hidden bg-black text-white font-retro-body relative">
+      <div className="retro-grid-container fixed inset-0 z-0 opacity-20">
+        <div className="retro-grid" />
+      </div>
       <header className="relative z-20 mx-4 mt-4 flex items-center justify-between rounded-sm px-4 py-3 md:px-6 brand-topbar">
         <div className="flex items-center gap-4">
           <Link
@@ -255,7 +262,7 @@ export default function TablePage() {
           )}
           {!isConnected && (
             <button
-              onClick={connect}
+              onClick={() => setShowWalletSelector(true)}
               className="px-3 py-2 font-retro-display text-[8px] brand-btn-magenta"
             >
               CONNECT
@@ -263,6 +270,8 @@ export default function TablePage() {
           )}
         </div>
       </header>
+
+      {walletSource === "starkzap" && <WalletWarning />}
 
       <main className="relative flex h-[calc(100vh-108px)]">
         <div className="relative flex min-w-0 flex-1 items-center justify-center overflow-hidden p-3 md:p-8">
@@ -357,6 +366,10 @@ export default function TablePage() {
           </div>
         </aside>
       </main>
+
+      {showWalletSelector && (
+        <WalletSelector onClose={() => setShowWalletSelector(false)} />
+      )}
     </div>
   );
 }

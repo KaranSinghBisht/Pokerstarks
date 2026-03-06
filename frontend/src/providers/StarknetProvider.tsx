@@ -9,6 +9,8 @@ import { RPC_URL } from "@/lib/dojo-config";
 import { getSystemAddress } from "@/lib/contracts";
 import { TONGO_STRK_ADDRESS, STRK_TOKEN_ADDRESS, CHIP_TOKEN_ADDRESS } from "@/lib/constants";
 
+type WalletSource = "injected" | "controller" | "starkzap";
+
 interface StarknetContextType {
   address: string | null;
   account: AccountInterface | null;
@@ -16,7 +18,11 @@ interface StarknetContextType {
   connecting: boolean;
   username: string | null;
   error: string | null;
+  walletSource: WalletSource | null;
   connect: () => Promise<void>;
+  connectController: () => Promise<void>;
+  connectInjected: () => Promise<void>;
+  connectWithStarkZap: () => Promise<void>;
   disconnect: () => void;
 }
 
@@ -27,7 +33,11 @@ const StarknetContext = createContext<StarknetContextType>({
   connecting: false,
   username: null,
   error: null,
+  walletSource: null,
   connect: async () => {},
+  connectController: async () => {},
+  connectInjected: async () => {},
+  connectWithStarkZap: async () => {},
   disconnect: () => {},
 });
 
@@ -44,7 +54,6 @@ const SHOWDOWN_ADDRESS = getSystemAddress("showdown");
 const SETTLE_ADDRESS = getSystemAddress("settle");
 const TIMEOUT_ADDRESS = getSystemAddress("timeout");
 const CHAT_ADDRESS = getSystemAddress("chat");
-type WalletSource = "injected" | "controller";
 
 type StarknetRequest =
   | {
@@ -440,6 +449,8 @@ export function StarknetProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const accountRef = useRef<AccountInterface | null>(null);
   const sourceRef = useRef<WalletSource | null>(null);
+  // Keep a reference to the StarkZap wallet for cleanup on disconnect
+  const starkZapWalletRef = useRef<{ disconnect: () => Promise<void> } | null>(null);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -482,11 +493,113 @@ export function StarknetProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const connectController = useCallback(async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      const controller = getController();
+      const account = await controller.connect();
+      if (account) {
+        accountRef.current = account as unknown as AccountInterface;
+        sourceRef.current = "controller";
+        setAddress(account.address);
+        try {
+          const name = await controller.username();
+          if (name) setUsername(name);
+        } catch {
+          // Username fetch is optional
+        }
+      } else {
+        setError("Cartridge Controller connection was cancelled.");
+      }
+    } catch (err) {
+      console.error("Cartridge Controller connection failed:", err);
+      setError(err instanceof Error ? err.message : "Cartridge connection failed.");
+    } finally {
+      setConnecting(false);
+    }
+  }, []);
+
+  const connectInjected = useCallback(async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      const injected = await connectInjectedWallet();
+      if (injected && !injected.chainMismatch && injected.address) {
+        accountRef.current = injected.account;
+        sourceRef.current = injected.source;
+        setAddress(injected.address);
+        setUsername(injected.username);
+      } else if (injected?.chainMismatch) {
+        setError("Your wallet is on the wrong network. Switch to Sepolia in your wallet settings.");
+      } else {
+        setError("No browser wallet found. Install ArgentX or Braavos.");
+      }
+    } catch (err) {
+      console.error("Injected wallet connection failed:", err);
+      setError(err instanceof Error ? err.message : "Browser wallet connection failed.");
+    } finally {
+      setConnecting(false);
+    }
+  }, []);
+
+  const connectWithStarkZap = useCallback(async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      const { getStarkZap } = await import("@/lib/starkzap");
+      const { OnboardStrategy } = await import("starkzap");
+      const { toAccountInterface } = await import("@/lib/starkzap/adapter");
+
+      const sdk = getStarkZap();
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+      const { wallet } = await sdk.onboard({
+        strategy: OnboardStrategy.Privy,
+        privy: {
+          resolve: async () => {
+            const walletRes = await fetch(`${origin}/api/wallet/starknet`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+            if (!walletRes.ok) {
+              const err = await walletRes.json().catch(() => ({}));
+              throw new Error(err.error || "Wallet creation failed");
+            }
+            const { wallet: w } = await walletRes.json();
+            return {
+              walletId: w.id,
+              publicKey: w.publicKey,
+              serverUrl: `${origin}/api/wallet/sign`,
+            };
+          },
+        },
+        accountPreset: "argentXV050",
+        deploy: "if_needed",
+      });
+
+      const adapted = toAccountInterface(wallet);
+      accountRef.current = adapted;
+      sourceRef.current = "starkzap";
+      starkZapWalletRef.current = wallet;
+      setAddress(wallet.address.toString());
+      setUsername("Email User");
+    } catch (err) {
+      console.error("StarkZap connection failed:", err);
+      setError(err instanceof Error ? err.message : "StarkZap connection failed.");
+    } finally {
+      setConnecting(false);
+    }
+  }, []);
+
   const disconnect = useCallback(async () => {
     try {
       if (sourceRef.current === "controller") {
         const controller = getController();
         await controller.disconnect();
+      } else if (sourceRef.current === "starkzap" && starkZapWalletRef.current) {
+        await starkZapWalletRef.current.disconnect().catch(() => {});
+        starkZapWalletRef.current = null;
       }
       setAddress(null);
       setUsername(null);
@@ -507,7 +620,11 @@ export function StarknetProvider({ children }: { children: ReactNode }) {
         connecting,
         username,
         error,
+        walletSource: sourceRef.current as WalletSource | null,
         connect,
+        connectController,
+        connectInjected,
+        connectWithStarkZap,
         disconnect,
       }}
     >

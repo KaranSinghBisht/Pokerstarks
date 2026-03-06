@@ -43,6 +43,10 @@ frontend/.env.production
 
 # Design artifacts
 stitch_designs/
+frames/
+inspiration.mp4
+context.md
+plan.md
 
 # OS
 .DS_Store

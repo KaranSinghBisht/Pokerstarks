@@ -14,6 +14,8 @@ import {
 } from "@/lib/constants";
 import TongoWallet from "@/components/poker/TongoWallet";
 import BrandWordmark from "@/components/brand/BrandWordmark";
+import WalletSelector from "@/components/ui/WalletSelector";
+import TableCard from "@/components/poker/TableCard";
 
 /** Normalize a Starknet hex address to lowercase with no leading zeros after 0x */
 function normalizeAddress(addr: string): string {
@@ -65,10 +67,11 @@ export default function LobbyPage() {
     account,
     isConnected,
     connecting,
-    connect,
     disconnect,
+    walletSource,
     error: walletError,
   } = useStarknet();
+  const [showWalletSelector, setShowWalletSelector] = useState(false);
   const { tables, loading, error: lobbyError, createTable, refresh } = useLobby();
   const tongo = useTongo(address, account);
   const chip = useChipToken(address, account);
@@ -145,7 +148,7 @@ export default function LobbyPage() {
 
   const handlePlaySolo = async () => {
     if (!isConnected || !address) {
-      connect();
+      setShowWalletSelector(true);
       return;
     }
     try {
@@ -219,6 +222,11 @@ export default function LobbyPage() {
                 }`}
               />
               <span className="font-retro-display text-[10px]">{walletLabel}</span>
+              {walletSource === "starkzap" && (
+                <span className="bg-purple-600 px-1.5 py-0.5 font-retro-display text-[7px] text-white">
+                  EMAIL
+                </span>
+              )}
             </div>
           </div>
           {isConnected && chip.isConfigured && (
@@ -253,7 +261,7 @@ export default function LobbyPage() {
             </button>
           )}
           <button
-            onClick={isConnected ? disconnect : connect}
+            onClick={isConnected ? disconnect : () => setShowWalletSelector(true)}
             disabled={connecting}
             className="flex items-center gap-2 px-5 py-3 font-retro-display text-[10px] brand-btn-magenta disabled:opacity-50"
           >
@@ -326,89 +334,18 @@ export default function LobbyPage() {
                 if (tableFilter === "public") return !isPrivacyTable(t.tokenAddress);
                 return true;
               })
-              .map((table, idx) => {
-              const isWaiting = table.state === "Waiting";
-              const isShielded = isPrivacyTable(table.tokenAddress);
-              const isTrusted = isTrustedVerifiers(table.shuffleVerifier, table.decryptVerifier);
-              const roomName = ROOM_NAMES[idx % ROOM_NAMES.length];
-              const roomBackground = ROOM_BACKGROUNDS[idx % ROOM_BACKGROUNDS.length];
-              return (
-                <div key={table.tableId} className="group relative pt-8">
-                  <div className="absolute -top-4 left-1/2 z-10 -translate-x-1/2 flex gap-2">
-                    <div
-                      className={`px-3 py-1 font-retro-display text-[9px] text-white pixel-border ${
-                        isWaiting ? "bg-green-500" : "bg-red-500"
-                      }`}
-                    >
-                      {isWaiting ? "WAITING" : "IN PROGRESS"}
-                    </div>
-                    {isShielded && (
-                      <div className="bg-purple-600 px-3 py-1 font-retro-display text-[9px] text-white pixel-border">
-                        SHIELDED
-                      </div>
-                    )}
-                    {!isTrusted && (
-                      <div className="bg-red-600 px-3 py-1 font-retro-display text-[9px] text-white pixel-border">
-                        UNVERIFIED
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="cabinet-shape relative bg-slate-800 p-1 shadow-2xl border-x-8 border-t-8 border-slate-700 group-hover:border-[var(--primary)] transition-colors">
-                    <div
-                      className={`mb-4 h-40 w-full ${roomBackground} relative flex flex-col items-center justify-center overflow-hidden`}
-                    >
-                      <div className="absolute inset-0 opacity-20 [background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.06)_0px,rgba(255,255,255,0.06)_2px,transparent_2px,transparent_7px)]" />
-                      <div className="mb-2 text-4xl opacity-50">🕹️</div>
-                      <div className="z-10 font-retro-display text-[10px] text-white">
-                        {roomName}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 px-4 pb-4 font-retro-display text-[9px]">
-                      <div className="flex justify-between text-slate-400">
-                        <span>BLINDS:</span>
-                        <span className="text-[var(--secondary)]">
-                          {isShielded
-                            ? `${Number(table.smallBlind) / 1e18}/${Number(table.bigBlind) / 1e18} STRK`
-                            : `${Number(table.smallBlind)}/${Number(table.bigBlind)}`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>PLAYERS:</span>
-                        <span className="text-white">
-                          {table.playerCount}/{table.maxPlayers}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>MIN BUY-IN:</span>
-                        <span className="text-white">
-                          {isShielded
-                            ? `${Number(table.minBuyIn) / 1e18} STRK`
-                            : Number(table.minBuyIn)}
-                        </span>
-                      </div>
-
-                      {isWaiting ? (
-                        <Link
-                          href={`/table/${table.tableId}`}
-                          className="mt-3 block w-full bg-[var(--primary)] py-3 text-center font-retro-display text-[10px] text-white pixel-border transition-transform hover:scale-[1.03] active:scale-[0.98]"
-                        >
-                          JOIN GAME
-                        </Link>
-                      ) : (
-                        <Link
-                          href={`/spectate/${table.tableId}`}
-                          className="mt-3 block w-full bg-slate-600 py-3 text-center font-retro-display text-[10px] text-slate-100 pixel-border transition-colors hover:bg-slate-500"
-                        >
-                          SPECTATE
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+              .map((table, idx) => (
+                <TableCard
+                  key={table.tableId}
+                  table={table}
+                  idx={idx}
+                  roomName={ROOM_NAMES[idx % ROOM_NAMES.length]}
+                  roomBackground={ROOM_BACKGROUNDS[idx % ROOM_BACKGROUNDS.length]}
+                  isWaiting={table.state === "Waiting"}
+                  isShielded={isPrivacyTable(table.tokenAddress)}
+                  isTrusted={isTrustedVerifiers(table.shuffleVerifier, table.decryptVerifier)}
+                />
+              ))}
 
             {tables.length === 0 && (
               <div className="col-span-full bg-black/60 p-10 text-center font-retro-display text-xs text-slate-300 pixel-border border-black">
@@ -431,6 +368,10 @@ export default function LobbyPage() {
           </div>
         )}
       </main>
+
+      {showWalletSelector && (
+        <WalletSelector onClose={() => setShowWalletSelector(false)} />
+      )}
 
       {showTongoWallet && address && (
         <div
