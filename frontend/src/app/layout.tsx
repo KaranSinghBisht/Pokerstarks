@@ -4,8 +4,22 @@ import BrandedTerminalBackground from "@/components/effects/BrandedTerminalBackg
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "https://frontend-seven-beta-93.vercel.app",
+  ),
   title: "Pokerstarks — ZK Poker on Starknet",
   description: "Provably fair poker with zero-knowledge proofs on Starknet",
+  openGraph: {
+    title: "Pokerstarks — ZK Poker on Starknet",
+    description: "Provably fair poker with zero-knowledge proofs on Starknet",
+    images: [{ url: "/logo.png", width: 512, height: 512 }],
+  },
+  twitter: {
+    card: "summary",
+    title: "Pokerstarks — ZK Poker on Starknet",
+    description: "Provably fair poker with zero-knowledge proofs on Starknet",
+    images: ["/logo.png"],
+  },
 };
 
 export default function RootLayout({
@@ -16,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
+        <div className="crt-overlay crt-flicker" />
         <div className="relative min-h-screen bg-[#080b12]">
           <div
             className="pointer-events-none fixed inset-0 z-0 bg-cover bg-center bg-no-repeat"

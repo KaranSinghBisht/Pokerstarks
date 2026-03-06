@@ -96,6 +96,10 @@ export default function PokerTable({
     isBettingPhase && !!localSeat && hand?.currentTurnSeat === localSeat.seatIndex;
   const allowJoinSeat = !!localPlayerAddress && !localSeat && table.state === "Waiting";
 
+  // Identify blinds
+  const smallBlindSeat = hand ? (hand.dealerSeat + 1) % table.maxPlayers : -1;
+  const bigBlindSeat = hand ? (hand.dealerSeat + 2) % table.maxPlayers : -1;
+
   return (
     <div className="relative mx-auto w-full max-w-6xl pb-36">
       {isUntrustedVerifier && (
@@ -103,34 +107,48 @@ export default function PokerTable({
           UNVERIFIED TABLE — Verifier contracts do not match canonical addresses. Shuffle or decrypt proofs may not be validated. Join at your own risk.
         </div>
       )}
-      <div className="relative aspect-[2/1] w-full border-4 border-black bg-[var(--felt-border)] p-4 pixel-border">
-        <div className="felt-gradient absolute inset-4 rounded-full border-[10px] border-[#5d4037] shadow-2xl shadow-black/50">
-          <div className="pointer-events-none absolute inset-2 rounded-full border-4 border-white/10" />
+      <div className="relative aspect-[2/1] w-full border-4 border-black bg-[#1a1a2e] p-4 pixel-border shadow-[0_30px_60px_-12px_rgba(0,0,0,0.8)]">
+        {/* Table Rim (3D effect) */}
+        <div className="absolute inset-0 border-[16px] border-[#2c2c44] shadow-[inset_0_0_20px_rgba(0,0,0,0.6)] pointer-events-none z-10" />
+        <div className="absolute inset-0 border-[4px] border-black/40 pointer-events-none z-10" />
+
+        {/* Neon Underglow */}
+        <div className="absolute -inset-1 bg-gradient-to-r from-[var(--primary)]/20 via-[var(--secondary)]/20 to-[var(--primary)]/20 blur-2xl opacity-30 pointer-events-none" />
+
+        <div className="felt-gradient dither-bg-dense absolute inset-[16px] rounded-sm shadow-[inset_0_0_100px_rgba(0,0,0,0.5)]">
+          <div className="scanline opacity-5" />
+          <div className="pointer-events-none absolute inset-2 border-2 border-white/5" />
 
           <AnimatePresence>
             {hand && hand.pot > 0n && (
               <motion.div
                 key="pot"
-                initial={{ opacity: 0, scale: 0.7 }}
-                animate={{ opacity: 1, scale: 1 }}
+                initial={{ opacity: 0, scale: 0.7, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.7 }}
                 transition={{ type: "spring", stiffness: 350, damping: 20 }}
-                className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2"
+                className="absolute left-1/2 top-[62%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
               >
+                {/* Visual Chip Pile */}
+                <div className="flex -space-x-2 mb-2">
+                   {[1, 2, 3].map(i => (
+                     <div key={i} className="h-4 w-4 rounded-full border border-black bg-[var(--accent)] shadow-sm" />
+                   ))}
+                </div>
                 <motion.div
                   key={Number(hand.pot)}
                   initial={{ scale: 1.15 }}
                   animate={{ scale: 1 }}
                   transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                  className="border-2 border-[var(--accent)]/40 bg-black/45 px-4 py-2 font-retro-display text-[10px] text-[var(--accent)] pixel-border-sm"
+                  className="border-2 border-[var(--accent)] bg-black/80 px-4 py-2 font-retro-display text-[11px] text-[var(--accent)] pixel-border-sm shadow-2xl"
                 >
-                  POT: {Number(hand.pot)}
+                  POT: {Number(hand.pot).toLocaleString()}
                 </motion.div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          <div className="absolute left-1/2 top-[42%] -translate-x-1/2 -translate-y-1/2">
             <CommunityCardsComponent cards={communityCards} phase={hand?.phase || ""} />
           </div>
 
@@ -252,6 +270,8 @@ export default function PokerTable({
             playerHand={ph}
             isCurrentTurn={!!(hand?.currentTurnSeat === i && isBettingPhase)}
             isDealer={hand?.dealerSeat === i}
+            isSmallBlind={smallBlindSeat === i}
+            isBigBlind={bigBlindSeat === i}
             isLocalPlayer={seat.player === localPlayerAddress}
             position={SEAT_POSITIONS[i]}
             localHoleCards={seat.player === localPlayerAddress ? myHoleCards : undefined}

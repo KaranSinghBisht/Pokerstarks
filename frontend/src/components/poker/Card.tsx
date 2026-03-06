@@ -52,9 +52,9 @@ export default function Card({ cardId, small }: CardProps) {
   }, [cardId]);
 
   return (
-    <div className={`${size}`} style={{ perspective: "300px" }}>
+    <div className={`${size} pixel-card-shadow card-hover-effect cursor-pointer group`} style={{ perspective: "600px" }}>
       <motion.div
-        className={`h-full w-full overflow-hidden border-2 border-black bg-white pixel-border-sm`}
+        className={`h-full w-full overflow-hidden border-2 border-black bg-white pixel-border-sm group-hover:border-[var(--primary)] transition-colors`}
         animate={{ rotateY: flipping ? [0, 90, 0] : 0 }}
         transition={flipping ? { duration: 0.42, times: [0, 0.47, 1], ease: "easeInOut" } : { duration: 0 }}
         style={{ transformStyle: "preserve-3d" }}
@@ -63,7 +63,7 @@ export default function Card({ cardId, small }: CardProps) {
         <img
           src={cardImageSrc(displayId)}
           alt={displayId === 255 ? "Card back" : `Card ${displayId}`}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover group-hover:brightness-110"
           loading="lazy"
           draggable={false}
         />
