@@ -18,6 +18,8 @@ export interface SystemAddresses {
   showdown: string;
   settle: string;
   timeout: string;
+  egs: string;
+  arena: string;
 }
 
 /**
@@ -45,6 +47,8 @@ export function loadSystemAddresses(manifestPath?: string): SystemAddresses {
         showdown: find("showdown_system"),
         settle: find("settle_system"),
         timeout: find("timeout_system"),
+        egs: find("egs_system"),
+        arena: find("arena_system"),
       };
       // Verify all found
       if (Object.values(addrs).every((a) => a)) return addrs;
@@ -79,6 +83,10 @@ export function loadSystemAddresses(manifestPath?: string): SystemAddresses {
     timeout:
       process.env.TIMEOUT_ADDRESS ??
       "0x3da83ea79bca6aee6953756fc98e445bfc5727c0d16f9633374a9c785016237",
+    egs:
+      process.env.EGS_ADDRESS ?? "",
+    arena:
+      process.env.ARENA_ADDRESS ?? "",
   };
 }
 
@@ -178,5 +186,21 @@ export class BotChain {
   // ─── Timeout ───
   async enforceTimeout(handId: number) {
     return this.execute(this.systems.timeout, "enforce_timeout", [handId]);
+  }
+
+  // ─── EGS ───
+  async egsMint(tableId: number, agentName: string) {
+    if (!this.systems.egs) throw new Error("EGS system address not configured");
+    return this.execute(this.systems.egs, "mint", [tableId, agentName]);
+  }
+
+  async egsUpdateScore(tokenId: string, handsPlayed: number, score: number) {
+    if (!this.systems.egs) throw new Error("EGS system address not configured");
+    return this.execute(this.systems.egs, "update_score", [tokenId, handsPlayed, score]);
+  }
+
+  async egsCompleteSession(tokenId: string, finalScore: number) {
+    if (!this.systems.egs) throw new Error("EGS system address not configured");
+    return this.execute(this.systems.egs, "complete_session", [tokenId, finalScore]);
   }
 }

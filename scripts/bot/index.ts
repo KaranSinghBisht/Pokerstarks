@@ -68,6 +68,7 @@ interface BotConfig {
   toriiUrl: string;
   worldAddress: string;
   pollMs: number;
+  egsTokenId: string;
 }
 
 const HELP_TEXT = `Pokerstarks AI Bot — headless poker player
@@ -90,6 +91,7 @@ Optional:
   --torii-url       Torii URL (default: http://localhost:8080)
   --world           World contract address (default: contracts/manifest_dev.json)
   --poll-ms         Poll interval in ms (default: 2000)
+  --egs-token-id    EGS token ID for score tracking (default: disabled)
   -h, --help        Show this help message
 
 Environment:
@@ -148,6 +150,7 @@ function parseArgs(): BotConfig {
     toriiUrl: get("--torii-url", "http://localhost:8080"),
     worldAddress,
     pollMs: parseInt(get("--poll-ms", "2000")),
+    egsTokenId: get("--egs-token-id", ""),
   };
 }
 
@@ -192,6 +195,7 @@ class PokerBot {
   private sessionHandId = 0;
   private running = true;
   private lastSeenHandId = 0;
+  private egsHandsPlayed = 0;
 
   // Guards — prevent duplicate actions
   private keySubmittedHand = 0;
@@ -265,13 +269,12 @@ class PokerBot {
     log.info(`Address: ${this.config.address.slice(0, 18)}...`);
 
     // Graceful shutdown
-    process.on("SIGINT", () => {
+    const shutdown = () => {
       log.warn("Shutting down...");
       this.running = false;
-    });
-    process.on("SIGTERM", () => {
-      this.running = false;
-    });
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
 
     // Main loop
     while (this.running) {
@@ -282,6 +285,21 @@ class PokerBot {
         log.error(`Tick error: ${err instanceof Error ? err.message : String(err)}`);
       }
       await sleep(this.config.pollMs);
+    }
+
+    // Complete EGS session on shutdown
+    if (this.config.egsTokenId && this.egsHandsPlayed > 0) {
+      try {
+        const gs = await this.state.poll(this.config.tableId);
+        const mySeatData = gs.seats.find(
+          (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
+        );
+        const finalScore = mySeatData ? Number(mySeatData.chips) : 0;
+        await this.chain.egsCompleteSession(this.config.egsTokenId, finalScore);
+        log.info(`[EGS] Session completed: final_score=${finalScore}`);
+      } catch (err) {
+        log.warn(`[EGS] Failed to complete session: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     log.info("Bot stopped.");
@@ -706,6 +724,21 @@ class PokerBot {
     log.action("Distributing pot");
     await this.chain.distributePot(hand.handId);
     this.distributePotHand = hand.handId;
+
+    // Update EGS score after pot distribution
+    if (this.config.egsTokenId) {
+      this.egsHandsPlayed += 1;
+      try {
+        const mySeatData = gs.seats.find(
+          (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
+        );
+        const chipCount = mySeatData ? Number(mySeatData.chips) : 0;
+        await this.chain.egsUpdateScore(this.config.egsTokenId, this.egsHandsPlayed, chipCount);
+        log.info(`[EGS] Updated score: hands=${this.egsHandsPlayed}, chips=${chipCount}`);
+      } catch (err) {
+        log.warn(`[EGS] Score update failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
   }
 }
 
