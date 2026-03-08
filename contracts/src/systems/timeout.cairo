@@ -267,10 +267,15 @@ pub mod timeout_system {
                         // P1 FIX: Deduct rake before distribution (mirrors settle.cairo)
                         if table.rake_bps > 0 {
                             let rake_amount = hand.pot * table.rake_bps.into() / 10000;
-                            let rake = if rake_amount > table.rake_cap {
+                            let rake_capped = if rake_amount > table.rake_cap {
                                 table.rake_cap
                             } else {
                                 rake_amount
+                            };
+                            let rake = if rake_capped > hand.pot {
+                                hand.pot
+                            } else {
+                                rake_capped
                             };
                             hand.pot -= rake;
 
@@ -456,7 +461,7 @@ pub mod timeout_system {
                 while i < max_players {
                     if i != seat_idx {
                         let ph: PlayerHand = world.read_model((hand_id, i));
-                        if ph.player != 0.try_into().unwrap() && !ph.has_folded {
+                        if ph.player != 0.try_into().unwrap() {
                             pos.append(ph.hole_card_1_pos);
                             pos.append(ph.hole_card_2_pos);
                         }
