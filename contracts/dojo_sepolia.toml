@@ -23,4 +23,6 @@ rpc_url = "https://api.cartridge.gg/x/starknet/sepolia"
     "pokerstarks-settle_system",
     "pokerstarks-chat_system",
     "pokerstarks-timeout_system",
+    "pokerstarks-arena_system",
+    "pokerstarks-egs_system",
 ]

@@ -2,7 +2,26 @@
 ///
 /// Implements the standard `IMinigameTokenData` interface (felt252 token_id),
 /// the optional `IMinigameDetails` for rich token metadata,
+/// SRC5 interface discovery with IMINIGAME_ID registration,
 /// plus game-specific minting / scoring functions.
+
+// ── EGS interface IDs (from game_components spec) ──
+
+/// SRC5 interface ID (Starknet's ERC-165 equivalent)
+pub const ISRC5_ID: felt252 =
+    0x3f918d17e5ee77373b56385708f855659a07f75997f365cf87748628532a055;
+/// IMinigame interface ID — required for Denshokan discovery
+pub const IMINIGAME_ID: felt252 =
+    0x1050f9a792acfa175e26783e365e1b0b38ff3440b960d0ffdfc0ff9d7dc9f2a;
+
+// ── EGS standard: SRC5 interface discovery ──
+
+#[starknet::interface]
+pub trait ISRC5<T> {
+    fn supports_interface(self: @T, interface_id: felt252) -> bool;
+}
+
+// ── EGS core: IMinigameTokenData ──
 
 #[starknet::interface]
 pub trait IMinigameTokenData<T> {
@@ -12,14 +31,27 @@ pub trait IMinigameTokenData<T> {
     fn game_over_batch(self: @T, token_ids: Span<felt252>) -> Array<bool>;
 }
 
-/// EGS optional extension: rich token metadata.
-/// Returns structured name/value pairs describing game sessions.
+// ── EGS struct: GameDetail (name/value pair for game_details) ──
+
+#[derive(Drop, Serde)]
+pub struct GameDetail {
+    pub name: felt252,
+    pub value: felt252,
+}
+
+// ── EGS optional: IMinigameDetails with batch variants ──
+
 #[starknet::interface]
 pub trait IMinigameDetails<T> {
-    fn token_name(self: @T, token_id: felt252) -> felt252;
-    fn token_description(self: @T, token_id: felt252) -> felt252;
-    fn game_details(self: @T, token_id: felt252) -> Array<(felt252, felt252)>;
+    fn token_name(self: @T, token_id: felt252) -> ByteArray;
+    fn token_description(self: @T, token_id: felt252) -> ByteArray;
+    fn game_details(self: @T, token_id: felt252) -> Array<GameDetail>;
+    fn token_name_batch(self: @T, token_ids: Span<felt252>) -> Array<ByteArray>;
+    fn token_description_batch(self: @T, token_ids: Span<felt252>) -> Array<ByteArray>;
+    fn game_details_batch(self: @T, token_ids: Span<felt252>) -> Array<Array<GameDetail>>;
 }
+
+// ── Game-specific interface ──
 
 #[starknet::interface]
 pub trait IPokerstarksEGS<T> {
@@ -34,7 +66,10 @@ pub trait IPokerstarksEGS<T> {
 pub mod egs_system {
     use dojo::model::ModelStorage;
     use starknet::{get_caller_address, get_block_timestamp, ContractAddress};
-    use super::{IMinigameTokenData, IMinigameDetails, IPokerstarksEGS};
+    use super::{
+        ISRC5, IMinigameTokenData, IMinigameDetails, IPokerstarksEGS,
+        GameDetail, ISRC5_ID, IMINIGAME_ID,
+    };
     use crate::models::egs::{GameToken, GameTokenCounter};
     use crate::models::arena::ArenaConfig;
 
@@ -69,6 +104,15 @@ pub mod egs_system {
         ScoreUpdate: ScoreUpdate,
         GameOver: GameOver,
         TokenMinted: TokenMinted,
+    }
+
+    // ── ISRC5 (EGS interface discovery) ──
+
+    #[abi(embed_v0)]
+    impl SRC5Impl of ISRC5<ContractState> {
+        fn supports_interface(self: @ContractState, interface_id: felt252) -> bool {
+            interface_id == ISRC5_ID || interface_id == IMINIGAME_ID
+        }
     }
 
     // ── IMinigameTokenData (EGS standard interface) ──
@@ -116,34 +160,94 @@ pub mod egs_system {
 
     #[abi(embed_v0)]
     impl MinigameDetailsImpl of IMinigameDetails<ContractState> {
-        fn token_name(self: @ContractState, token_id: felt252) -> felt252 {
+        fn token_name(self: @ContractState, token_id: felt252) -> ByteArray {
             let world = self.world_default();
             let token: GameToken = world.read_model(token_id);
-            token.agent_name
+            felt252_to_bytearray(token.agent_name)
         }
 
-        fn token_description(self: @ContractState, token_id: felt252) -> felt252 {
+        fn token_description(self: @ContractState, token_id: felt252) -> ByteArray {
             let world = self.world_default();
             let token: GameToken = world.read_model(token_id);
             if token.game_over {
-                'Completed Session'
+                "Completed PokerStarks Session"
             } else {
-                'Active Session'
+                "Active PokerStarks Session"
             }
         }
 
-        fn game_details(self: @ContractState, token_id: felt252) -> Array<(felt252, felt252)> {
+        fn game_details(self: @ContractState, token_id: felt252) -> Array<GameDetail> {
             let world = self.world_default();
             let token: GameToken = world.read_model(token_id);
             array![
-                ('agent', token.agent_name),
-                ('table_id', token.table_id.into()),
-                ('hands_played', token.hands_played.into()),
-                ('score', token.score.into()),
-                ('game_over', if token.game_over { 1 } else { 0 }),
-                ('created_at', token.created_at.into()),
-                ('completed_at', token.completed_at.into()),
+                GameDetail { name: 'agent', value: token.agent_name },
+                GameDetail { name: 'table_id', value: token.table_id.into() },
+                GameDetail { name: 'hands_played', value: token.hands_played.into() },
+                GameDetail { name: 'score', value: token.score.into() },
+                GameDetail {
+                    name: 'game_over',
+                    value: if token.game_over { 1 } else { 0 },
+                },
+                GameDetail { name: 'created_at', value: token.created_at.into() },
+                GameDetail { name: 'completed_at', value: token.completed_at.into() },
             ]
+        }
+
+        fn token_name_batch(
+            self: @ContractState, token_ids: Span<felt252>,
+        ) -> Array<ByteArray> {
+            let world = self.world_default();
+            let mut results: Array<ByteArray> = array![];
+            let mut i: u32 = 0;
+            while i < token_ids.len() {
+                let token: GameToken = world.read_model(*token_ids.at(i));
+                results.append(felt252_to_bytearray(token.agent_name));
+                i += 1;
+            };
+            results
+        }
+
+        fn token_description_batch(
+            self: @ContractState, token_ids: Span<felt252>,
+        ) -> Array<ByteArray> {
+            let world = self.world_default();
+            let mut results: Array<ByteArray> = array![];
+            let mut i: u32 = 0;
+            while i < token_ids.len() {
+                let token: GameToken = world.read_model(*token_ids.at(i));
+                if token.game_over {
+                    results.append("Completed PokerStarks Session");
+                } else {
+                    results.append("Active PokerStarks Session");
+                }
+                i += 1;
+            };
+            results
+        }
+
+        fn game_details_batch(
+            self: @ContractState, token_ids: Span<felt252>,
+        ) -> Array<Array<GameDetail>> {
+            let world = self.world_default();
+            let mut results: Array<Array<GameDetail>> = array![];
+            let mut i: u32 = 0;
+            while i < token_ids.len() {
+                let token: GameToken = world.read_model(*token_ids.at(i));
+                results.append(array![
+                    GameDetail { name: 'agent', value: token.agent_name },
+                    GameDetail { name: 'table_id', value: token.table_id.into() },
+                    GameDetail { name: 'hands_played', value: token.hands_played.into() },
+                    GameDetail { name: 'score', value: token.score.into() },
+                    GameDetail {
+                        name: 'game_over',
+                        value: if token.game_over { 1 } else { 0 },
+                    },
+                    GameDetail { name: 'created_at', value: token.created_at.into() },
+                    GameDetail { name: 'completed_at', value: token.completed_at.into() },
+                ]);
+                i += 1;
+            };
+            results
         }
     }
 
@@ -158,7 +262,6 @@ pub mod egs_system {
             assert(agent_name != 0, 'agent_name cannot be empty');
 
             let mut counter: GameTokenCounter = world.read_model(0_u8);
-            // M3 FIX: Ensure token IDs start at 1 (0 is often used as null)
             if counter.next_id == 0 {
                 counter.next_id = 1;
             }
@@ -192,7 +295,6 @@ pub mod egs_system {
 
             let mut token: GameToken = world.read_model(token_id);
             assert(!token.game_over, 'game already over');
-            // C2 FIX: Allow token owner OR arena operator
             let caller = get_caller_address();
             assert(
                 token.owner == caller || is_operator(ref world, caller), 'not authorized',
@@ -210,7 +312,6 @@ pub mod egs_system {
 
             let mut token: GameToken = world.read_model(token_id);
             assert(!token.game_over, 'game already over');
-            // C2 FIX: Allow token owner OR arena operator
             let caller = get_caller_address();
             assert(
                 token.owner == caller || is_operator(ref world, caller), 'not authorized',
@@ -235,9 +336,30 @@ pub mod egs_system {
         }
     }
 
+    // ── Helpers ──
+
     fn is_operator(ref world: dojo::world::WorldStorage, caller: ContractAddress) -> bool {
         let config: ArenaConfig = world.read_model(0_u8);
         config.operator == caller
+    }
+
+    /// Convert a short-string felt252 to ByteArray for EGS spec compliance.
+    /// Computes the actual byte length to avoid null-byte padding.
+    fn felt252_to_bytearray(value: felt252) -> ByteArray {
+        if value == 0 {
+            return "";
+        }
+        // Compute byte length of the short string
+        let as_u256: u256 = value.into();
+        let mut len: usize = 0;
+        let mut v = as_u256;
+        while v > 0 {
+            len += 1;
+            v = v / 256;
+        };
+        let mut ba: ByteArray = "";
+        ba.append_word(value, len);
+        ba
     }
 
     #[generate_trait]
