@@ -110,7 +110,7 @@ pub mod showdown_system {
             // Previously hole cards only required the owner's vote, which was trivially
             // forgeable since no cryptographic proof bound the claimed card_id.
 
-            let required_votes: u8 = active_count;
+            let required_votes: u8 = hand.num_players;
 
             if vote_count >= required_votes {
                 // P0 FIX: Both community and hole cards use majority vote consensus.
@@ -265,10 +265,15 @@ pub mod showdown_system {
             let mut total_rake: u128 = 0;
             if table.rake_bps > 0 {
                 let rake_amount = hand.pot * table.rake_bps.into() / 10000;
-                let rake = if rake_amount > table.rake_cap {
+                let rake_capped = if rake_amount > table.rake_cap {
                     table.rake_cap
                 } else {
                     rake_amount
+                };
+                let rake = if rake_capped > hand.pot {
+                    hand.pot
+                } else {
+                    rake_capped
                 };
                 total_rake = rake;
                 hand.pot -= rake;
