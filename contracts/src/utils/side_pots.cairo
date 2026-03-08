@@ -174,5 +174,7 @@ pub fn shl_u8(val: u8, shift: u8) -> u8 {
     if shift == 3 { return val * 8; }
     if shift == 4 { return val * 16; }
     if shift == 5 { return val * 32; }
+    if shift == 6 { return val * 64; }
+    assert(false, 'shl_u8: shift out of range');
     0
 }
