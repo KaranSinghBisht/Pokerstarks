@@ -97,3 +97,11 @@ pub struct ChallengeCounter {
     pub singleton: u8,
     pub next_id: u32,
 }
+
+#[derive(Copy, Drop, Serde, Debug)]
+#[dojo::model]
+pub struct ArenaConfig {
+    #[key]
+    pub singleton: u8,
+    pub operator: ContractAddress,
+}

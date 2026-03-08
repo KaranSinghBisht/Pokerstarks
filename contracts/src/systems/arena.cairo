@@ -33,6 +33,7 @@ pub trait IArena<T> {
     fn set_erc8004_identity(
         ref self: T, agent_id: u32, identity_address: starknet::ContractAddress,
     );
+    fn set_operator(ref self: T, operator: starknet::ContractAddress);
 }
 
 #[dojo::contract]
@@ -42,7 +43,7 @@ pub mod arena_system {
     use super::IArena;
     use crate::models::arena::{
         AgentProfile, AgentCounter, AgentBankroll, ArenaMatch, ArenaMatchAgent, MatchCounter,
-        Challenge, ChallengeCounter,
+        Challenge, ChallengeCounter, ArenaConfig,
     };
     use crate::models::enums::{MatchStatus, AgentType, ChallengeStatus};
 
@@ -58,10 +59,53 @@ pub mod arena_system {
         identity_address: ContractAddress,
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct AgentRegistered {
+        #[key]
+        agent_id: u32,
+        owner: ContractAddress,
+        name: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct MatchCreated {
+        #[key]
+        match_id: u32,
+        table_id: u64,
+        num_agents: u8,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct MatchCompleted {
+        #[key]
+        match_id: u32,
+        winner_agent_id: u32,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct ChallengeCreated {
+        #[key]
+        challenge_id: u32,
+        challenger: u32,
+        challenged: u32,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct ChallengeResolved {
+        #[key]
+        challenge_id: u32,
+        status: ChallengeStatus,
+    }
+
     #[event]
     #[derive(Drop, starknet::Event)]
     enum Event {
         AgentIdentityLinked: AgentIdentityLinked,
+        AgentRegistered: AgentRegistered,
+        MatchCreated: MatchCreated,
+        MatchCompleted: MatchCompleted,
+        ChallengeCreated: ChallengeCreated,
+        ChallengeResolved: ChallengeResolved,
     }
 
     fn u8_to_agent_type(v: u8) -> AgentType {
@@ -128,6 +172,8 @@ pub mod arena_system {
                 last_match_at: 0,
             };
             world.write_model(@bankroll);
+
+            self.emit(AgentRegistered { agent_id, owner: caller, name });
 
             agent_id
         }
@@ -203,6 +249,10 @@ pub mod arena_system {
             ref self: ContractState, table_id: u64, agent_ids: Span<u32>, buy_in: u128,
         ) -> u32 {
             let mut world = self.world_default();
+            let config: ArenaConfig = world.read_model(0_u8);
+            assert(
+                get_caller_address() == config.operator, 'not authorized operator',
+            );
             let num_agents = agent_ids.len();
             assert(num_agents >= 2, 'need at least 2 agents');
             assert(num_agents <= 6, 'max 6 agents');
@@ -288,6 +338,13 @@ pub mod arena_system {
                 k += 1;
             };
 
+            self
+                .emit(
+                    MatchCreated {
+                        match_id, table_id, num_agents: num_agents.try_into().unwrap(),
+                    },
+                );
+
             match_id
         }
 
@@ -298,6 +355,10 @@ pub mod arena_system {
             chip_deltas: Span<i128>,
         ) {
             let mut world = self.world_default();
+            let config: ArenaConfig = world.read_model(0_u8);
+            assert(
+                get_caller_address() == config.operator, 'not authorized operator',
+            );
 
             let mut arena_match: ArenaMatch = world.read_model(match_id);
             assert(arena_match.status == MatchStatus::InProgress, 'match not in progress');
@@ -348,8 +409,6 @@ pub mod arena_system {
                     profile.total_chips_lost += abs_delta;
                 }
 
-                world.write_model(@profile);
-
                 // Settle bankroll: release reserved, apply delta
                 let mut bankroll: AgentBankroll = world.read_model(match_agent.agent_id);
                 bankroll.reserved_chips -= buy_in;
@@ -364,33 +423,34 @@ pub mod arena_system {
                     }
                 }
 
-                // Auto-pause if below min_balance
+                // Auto-pause if below min_balance (single write with profile)
                 if bankroll.min_balance > 0
                     && bankroll.deposited_chips < bankroll.min_balance {
-                    let mut p: AgentProfile = world.read_model(match_agent.agent_id);
-                    p.auto_play = false;
-                    world.write_model(@p);
+                    profile.auto_play = false;
                 }
 
+                world.write_model(@profile);
                 world.write_model(@bankroll);
                 i += 1;
             };
 
             // Update Elo ratings for winner vs each loser
+            // H1 FIX: Snapshot winner elo before loop to prevent compounding
+            let winner_profile: AgentProfile = world.read_model(winner_agent_id);
+            let base_winner_elo = winner_profile.elo_rating;
+            let mut total_gain: u32 = 0;
+
             let mut k: u8 = 0;
             while k < num {
                 let ma: ArenaMatchAgent = world.read_model((match_id, k));
                 if ma.agent_id != winner_agent_id {
-                    let wp: AgentProfile = world.read_model(winner_agent_id);
                     let lp: AgentProfile = world.read_model(ma.agent_id);
 
                     let (new_winner_elo, new_loser_elo) = calculate_elo(
-                        wp.elo_rating, lp.elo_rating,
+                        base_winner_elo, lp.elo_rating,
                     );
 
-                    let mut wp_mut: AgentProfile = world.read_model(winner_agent_id);
-                    wp_mut.elo_rating = new_winner_elo;
-                    world.write_model(@wp_mut);
+                    total_gain += new_winner_elo - base_winner_elo;
 
                     let mut lp_mut: AgentProfile = world.read_model(ma.agent_id);
                     lp_mut.elo_rating = new_loser_elo;
@@ -398,6 +458,13 @@ pub mod arena_system {
                 }
                 k += 1;
             };
+
+            // Apply total gain to winner once
+            let mut wp_final: AgentProfile = world.read_model(winner_agent_id);
+            wp_final.elo_rating = base_winner_elo + total_gain;
+            world.write_model(@wp_final);
+
+            self.emit(MatchCompleted { match_id, winner_agent_id });
         }
 
         fn challenge_agent(
@@ -440,6 +507,15 @@ pub mod arena_system {
             };
             world.write_model(@challenge);
 
+            self
+                .emit(
+                    ChallengeCreated {
+                        challenge_id,
+                        challenger: challenger_agent_id,
+                        challenged: challenged_agent_id,
+                    },
+                );
+
             challenge_id
         }
 
@@ -450,7 +526,14 @@ pub mod arena_system {
 
             let mut challenge: Challenge = world.read_model(challenge_id);
             assert(challenge.status == ChallengeStatus::Pending, 'not pending');
-            assert(now < challenge.expires_at, 'challenge expired');
+
+            // M6 FIX: If expired, set status to Expired instead of just asserting
+            if now >= challenge.expires_at {
+                challenge.status = ChallengeStatus::Expired;
+                world.write_model(@challenge);
+                self.emit(ChallengeResolved { challenge_id, status: ChallengeStatus::Expired });
+                assert(false, 'challenge expired');
+            }
 
             let challenged: AgentProfile = world.read_model(challenge.challenged_agent_id);
             assert(challenged.owner == caller, 'not challenged owner');
@@ -462,6 +545,7 @@ pub mod arena_system {
 
             challenge.status = ChallengeStatus::Accepted;
             world.write_model(@challenge);
+            self.emit(ChallengeResolved { challenge_id, status: ChallengeStatus::Accepted });
         }
 
         fn decline_challenge(ref self: ContractState, challenge_id: u32) {
@@ -476,6 +560,7 @@ pub mod arena_system {
 
             challenge.status = ChallengeStatus::Declined;
             world.write_model(@challenge);
+            self.emit(ChallengeResolved { challenge_id, status: ChallengeStatus::Declined });
         }
 
         fn set_erc8004_identity(
@@ -491,6 +576,21 @@ pub mod arena_system {
             world.write_model(@profile);
 
             self.emit(AgentIdentityLinked { agent_id, identity_address });
+        }
+
+        fn set_operator(ref self: ContractState, operator: ContractAddress) {
+            let mut world = self.world_default();
+            let caller = get_caller_address();
+            let config: ArenaConfig = world.read_model(0_u8);
+
+            // First call (operator is zero) allows anyone to bootstrap;
+            // subsequent calls require the current operator.
+            if config.operator != ZERO_ADDR.try_into().unwrap() {
+                assert(caller == config.operator, 'not current operator');
+            }
+
+            let new_config = ArenaConfig { singleton: 0_u8, operator };
+            world.write_model(@new_config);
         }
     }
 
