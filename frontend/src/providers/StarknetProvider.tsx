@@ -54,6 +54,8 @@ const SHOWDOWN_ADDRESS = getSystemAddress("showdown");
 const SETTLE_ADDRESS = getSystemAddress("settle");
 const TIMEOUT_ADDRESS = getSystemAddress("timeout");
 const CHAT_ADDRESS = getSystemAddress("chat");
+const ARENA_ADDRESS = getSystemAddress("arena");
+const EGS_ADDRESS = getSystemAddress("egs");
 
 type StarknetRequest =
   | {
@@ -181,6 +183,35 @@ const SESSION_POLICIES: SessionPolicies = {
       ? {
           [CHAT_ADDRESS]: {
             methods: [{ entrypoint: "send_message" }, { entrypoint: "send_emote" }],
+          },
+        }
+      : {}),
+    ...(ARENA_ADDRESS
+      ? {
+          [ARENA_ADDRESS]: {
+            methods: [
+              { entrypoint: "register_agent" },
+              { entrypoint: "challenge_agent" },
+              { entrypoint: "accept_challenge" },
+              { entrypoint: "decline_challenge" },
+              { entrypoint: "deposit_chips" },
+              { entrypoint: "withdraw_chips" },
+              { entrypoint: "update_agent_config" },
+              { entrypoint: "deactivate_agent" },
+              { entrypoint: "set_erc8004_identity" },
+              { entrypoint: "set_operator" },
+            ],
+          },
+        }
+      : {}),
+    ...(EGS_ADDRESS
+      ? {
+          [EGS_ADDRESS]: {
+            methods: [
+              { entrypoint: "mint" },
+              { entrypoint: "update_score" },
+              { entrypoint: "complete_session" },
+            ],
           },
         }
       : {}),

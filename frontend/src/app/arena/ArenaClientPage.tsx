@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { useStarknet } from "@/providers/StarknetProvider";
 import { useArena } from "@/hooks/useArena";
 import type { ArenaMatch } from "@/hooks/useArena";
+import { useArenaActions } from "@/hooks/useArenaActions";
 import BrandWordmark from "@/components/brand/BrandWordmark";
 import WalletSelector from "@/components/ui/WalletSelector";
 import AgentLeaderboard from "@/components/arena/AgentLeaderboard";
@@ -13,7 +14,8 @@ import LLMReasoningPanel from "@/components/arena/LLMReasoningPanel";
 
 export default function ArenaClientPage() {
   const { isConnected, connecting, disconnect, address } = useStarknet();
-  const { agents, matches, challenges, loading, error } = useArena();
+  const { agents, matches, challenges, loading, error, refresh } = useArena();
+  const { acceptChallenge, declineChallenge } = useArenaActions();
   const [showWalletSelector, setShowWalletSelector] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<ArenaMatch | null>(null);
   const [showRegister, setShowRegister] = useState(false);
@@ -230,10 +232,30 @@ export default function ArenaClientPage() {
                           </span>
                           {isMyChallenged && (
                             <div className="flex gap-2">
-                              <button className="px-3 py-1 font-retro-display text-[8px] bg-green-500/20 text-green-300 border border-green-500/30 hover:bg-green-500/30 transition-colors">
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await acceptChallenge(challenge.challengeId);
+                                    await refresh();
+                                  } catch (err) {
+                                    console.error("Accept failed:", err);
+                                  }
+                                }}
+                                className="px-3 py-1 font-retro-display text-[8px] bg-green-500/20 text-green-300 border border-green-500/30 hover:bg-green-500/30 transition-colors"
+                              >
                                 ACCEPT
                               </button>
-                              <button className="px-3 py-1 font-retro-display text-[8px] bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 transition-colors">
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await declineChallenge(challenge.challengeId);
+                                    await refresh();
+                                  } catch (err) {
+                                    console.error("Decline failed:", err);
+                                  }
+                                }}
+                                className="px-3 py-1 font-retro-display text-[8px] bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 transition-colors"
+                              >
                                 DECLINE
                               </button>
                             </div>
@@ -318,10 +340,27 @@ export default function ArenaClientPage() {
 // ─── Register Agent Modal ───
 
 function RegisterAgentModal({ onClose }: { onClose: () => void }) {
+  const { address } = useStarknet();
+  const { registerAgent } = useArenaActions();
   const [name, setName] = useState("");
+  const [agentAddress, setAgentAddress] = useState(address ?? "");
   const [personality, setPersonality] = useState("gto");
   const [agentType, setAgentType] = useState("1"); // Bot
   const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleRegister = async () => {
+    if (!name || submitting) return;
+    setSubmitting(true);
+    try {
+      await registerAgent(name, agentAddress || address || "0x0", personality, Number(agentType), description);
+      onClose();
+    } catch (err) {
+      console.error("Registration failed:", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={onClose}>
@@ -348,6 +387,22 @@ function RegisterAgentModal({ onClose }: { onClose: () => void }) {
               placeholder="e.g. AlphaPoker"
               className="w-full bg-black/50 border border-white/10 px-4 py-2 font-retro-display text-[10px] text-white placeholder:text-white/20 focus:border-[var(--primary)]/50 focus:outline-none"
             />
+          </div>
+
+          <div>
+            <label className="block font-retro-display text-[8px] text-white/40 uppercase mb-1">
+              Agent Address
+            </label>
+            <input
+              type="text"
+              value={agentAddress}
+              onChange={(e) => setAgentAddress(e.target.value)}
+              placeholder={address ?? "0x..."}
+              className="w-full bg-black/50 border border-white/10 px-4 py-2 font-retro-display text-[10px] text-white placeholder:text-white/20 focus:border-[var(--primary)]/50 focus:outline-none"
+            />
+            <div className="font-retro-display text-[7px] text-white/20 mt-1">
+              Defaults to your connected wallet address
+            </div>
           </div>
 
           <div>
@@ -422,10 +477,11 @@ function RegisterAgentModal({ onClose }: { onClose: () => void }) {
               CANCEL
             </button>
             <button
-              disabled={!name}
+              onClick={handleRegister}
+              disabled={!name || submitting}
               className="flex-1 px-4 py-2 font-retro-display text-[10px] brand-btn-cyan disabled:opacity-30"
             >
-              REGISTER
+              {submitting ? "REGISTERING..." : "REGISTER"}
             </button>
           </div>
         </div>
@@ -456,8 +512,23 @@ function ChallengeModal({
   myAgents: AgentProfile[];
   onClose: () => void;
 }) {
+  const { challengeAgent } = useArenaActions();
   const [selectedAgent, setSelectedAgent] = useState(myAgents[0]?.agentId ?? 0);
   const [buyIn, setBuyIn] = useState("500");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleChallenge = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await challengeAgent(selectedAgent, targetAgentId, BigInt(buyIn || "0"));
+      onClose();
+    } catch (err) {
+      console.error("Challenge failed:", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={onClose}>
@@ -526,9 +597,11 @@ function ChallengeModal({
               CANCEL
             </button>
             <button
-              className="flex-1 px-4 py-2 font-retro-display text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
+              onClick={handleChallenge}
+              disabled={submitting}
+              className="flex-1 px-4 py-2 font-retro-display text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-colors disabled:opacity-30"
             >
-              SEND CHALLENGE
+              {submitting ? "SENDING..." : "SEND CHALLENGE"}
             </button>
           </div>
         </div>

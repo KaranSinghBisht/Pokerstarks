@@ -7,7 +7,9 @@ export type SystemContract =
   | "showdown"
   | "settle"
   | "timeout"
-  | "chat";
+  | "chat"
+  | "arena"
+  | "egs";
 
 // Local development fallbacks from contracts/manifest_dev.json.
 // Production should always provide explicit NEXT_PUBLIC_* addresses.
@@ -21,6 +23,8 @@ const DEV_FALLBACK: Record<SystemContract, string> = {
   settle: "0x2608e1a285dbe68e8a1435f0beae53e1837e33111d98cd25ecf2bd104472fbe",
   timeout: "0x3da83ea79bca6aee6953756fc98e445bfc5727c0d16f9633374a9c785016237",
   chat: "0x1c3fa28dc400a60080f713778749c778ed24f683df859f369c365f2ef9c2569",
+  arena: "",
+  egs: "",
 };
 
 const ENV_VALUES: Record<SystemContract, string> = {
@@ -33,6 +37,8 @@ const ENV_VALUES: Record<SystemContract, string> = {
   settle: process.env.NEXT_PUBLIC_SETTLE_ADDRESS || "",
   timeout: process.env.NEXT_PUBLIC_TIMEOUT_ADDRESS || "",
   chat: process.env.NEXT_PUBLIC_CHAT_ADDRESS || "",
+  arena: process.env.NEXT_PUBLIC_ARENA_ADDRESS || "",
+  egs: process.env.NEXT_PUBLIC_EGS_ADDRESS || "",
 };
 
 const allowFallback = process.env.NODE_ENV !== "production";
@@ -47,6 +53,8 @@ export const SYSTEM_CONTRACTS: Record<SystemContract, string> = {
   settle: ENV_VALUES.settle || (allowFallback ? DEV_FALLBACK.settle : ""),
   timeout: ENV_VALUES.timeout || (allowFallback ? DEV_FALLBACK.timeout : ""),
   chat: ENV_VALUES.chat || (allowFallback ? DEV_FALLBACK.chat : ""),
+  arena: ENV_VALUES.arena || (allowFallback ? DEV_FALLBACK.arena : ""),
+  egs: ENV_VALUES.egs || (allowFallback ? DEV_FALLBACK.egs : ""),
 };
 
 export function getSystemAddress(contract: SystemContract): string {
