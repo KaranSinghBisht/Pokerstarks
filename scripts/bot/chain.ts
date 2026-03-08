@@ -189,9 +189,9 @@ export class BotChain {
   }
 
   // ─── EGS ───
-  async egsMint(tableId: number, agentName: string) {
+  async egsMint(owner: string, tableId: number, agentName: string) {
     if (!this.systems.egs) throw new Error("EGS system address not configured");
-    return this.execute(this.systems.egs, "mint", [tableId, agentName]);
+    return this.execute(this.systems.egs, "mint", [owner, tableId, agentName]);
   }
 
   async egsUpdateScore(tokenId: string, handsPlayed: number, score: number) {

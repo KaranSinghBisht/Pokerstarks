@@ -644,15 +644,21 @@ pub mod arena_system {
         }
     }
 
+    /// Called by the Dojo world during contract migration.
+    /// Sets the transaction sender (deployer) as operator exactly once.
     fn dojo_init(ref self: ContractState) {
         let mut world = self.world_default();
-        let caller = get_caller_address();
         let config: ArenaConfig = world.read_model(0_u8);
         let zero: ContractAddress = ZERO_ADDR.try_into().unwrap();
-        if config.operator == zero {
-            let new_config = ArenaConfig { singleton: 0_u8, operator: caller };
-            world.write_model(@new_config);
-        }
+        assert(config.operator == zero, 'already initialized');
+
+        // In Dojo, dojo_init is invoked by the world contract so
+        // get_caller_address() returns the world address.  Use the
+        // transaction originator (deployer account) as operator.
+        let deployer = starknet::get_tx_info().unbox().account_contract_address;
+        assert(deployer != zero, 'invalid deployer');
+        let new_config = ArenaConfig { singleton: 0_u8, operator: deployer };
+        world.write_model(@new_config);
     }
 
     /// Integer Elo calculation.

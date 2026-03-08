@@ -573,9 +573,87 @@ async function main() {
     });
 
   } else if (config.mode === "challenge") {
-    log.info("Challenge mode: watching for accepted challenges...");
-    // TODO: Poll Torii for Challenge entities with status=Accepted, create matches
-    log.info("Challenge watching not yet implemented — use manual mode for now");
+    log.info(`Challenge mode: polling every ${config.interval}s for accepted challenges`);
+
+    const CHALLENGE_MODEL = `${NAMESPACE}-Challenge`;
+    const processedChallenges = new Set<number>();
+
+    const pollChallenges = async () => {
+      try {
+        if (!cachedSdk) {
+          cachedSdk = await init<DojoSchema>({
+            client: { worldAddress: config.worldAddress, toriiUrl: config.toriiUrl },
+            domain: { name: "STARK POKER", version: "1.0.0", chainId: "SN_SEPOLIA" },
+          });
+        }
+
+        const entities = await cachedSdk.getEntities({
+          query: new ToriiQueryBuilder<DojoSchema>()
+            .withClause(KeysClause([CHALLENGE_MODEL], []).build())
+            .withLimit(50),
+        });
+
+        const allAgents = await fetchAvailableAgents(config.toriiUrl, config.worldAddress);
+
+        for (const entity of entities.getItems()) {
+          const models = entity.models?.[NAMESPACE] ?? {};
+          const c = (models["Challenge"] ?? models[CHALLENGE_MODEL]) as Record<string, unknown> | undefined;
+          if (!c) continue;
+
+          const challengeId = Number(c.challenge_id ?? 0);
+          if (processedChallenges.has(challengeId)) continue;
+
+          // ChallengeStatus::Accepted = variant index 1 in the enum
+          const status = c.status;
+          const isAccepted = status === "Accepted" || status === 1 ||
+            (typeof status === "object" && status !== null && "Accepted" in (status as Record<string, unknown>));
+          if (!isAccepted) continue;
+
+          processedChallenges.add(challengeId);
+
+          const challengerAgentId = Number(c.challenger_agent_id ?? 0);
+          const challengedAgentId = Number(c.challenged_agent_id ?? 0);
+          const buyIn = Number(c.buy_in ?? config.buyIn);
+
+          log.info(`Challenge #${challengeId} accepted: Agent#${challengerAgentId} vs Agent#${challengedAgentId}`);
+
+          try {
+            await callArena("create_arena_match", [
+              0, // auto table
+              2,
+              challengerAgentId,
+              challengedAgentId,
+              buyIn,
+            ]);
+            log.info(`Match created for challenge #${challengeId}`);
+
+            if (config.egsEnabled) {
+              const agentObjs = [challengerAgentId, challengedAgentId].map((id) => {
+                const found = allAgents.find((a) => a.agentId === id);
+                return { agentId: id, agentAddress: found?.agentAddress ?? "0x0" };
+              });
+              const tokens = await mintEgsTokens(agentObjs, 0);
+              if (tokens.length > 0) {
+                egsTokens.set(`challenge-${challengeId}`, tokens);
+                log.info(`[EGS] Minted ${tokens.length} tokens for challenge match`);
+              }
+            }
+          } catch (err: unknown) {
+            log.warn(`Failed to create match for challenge #${challengeId}: ${err instanceof Error ? err.message : err}`);
+          }
+        }
+      } catch (err: unknown) {
+        log.warn(`Challenge poll error: ${err instanceof Error ? err.message : err}`);
+      }
+    };
+
+    await pollChallenges();
+    setInterval(pollChallenges, config.interval * 1000);
+
+    process.on("SIGINT", () => {
+      killAllBots();
+      process.exit(0);
+    });
   }
 }
 
