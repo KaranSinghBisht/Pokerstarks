@@ -23,9 +23,10 @@ pub trait IPokerstarksEGS<T> {
 #[dojo::contract]
 pub mod egs_system {
     use dojo::model::ModelStorage;
-    use starknet::{get_caller_address, get_block_timestamp};
+    use starknet::{get_caller_address, get_block_timestamp, ContractAddress};
     use super::{IMinigameTokenData, IPokerstarksEGS};
     use crate::models::egs::{GameToken, GameTokenCounter};
+    use crate::models::arena::ArenaConfig;
 
     // ── Events ──
 
@@ -48,7 +49,7 @@ pub mod egs_system {
     struct TokenMinted {
         #[key]
         token_id: felt252,
-        owner: felt252,
+        owner: ContractAddress,
         table_id: u64,
     }
 
@@ -112,6 +113,10 @@ pub mod egs_system {
             assert(agent_name != 0, 'agent_name cannot be empty');
 
             let mut counter: GameTokenCounter = world.read_model(0_u8);
+            // M3 FIX: Ensure token IDs start at 1 (0 is often used as null)
+            if counter.next_id == 0 {
+                counter.next_id = 1;
+            }
             let token_id = counter.next_id;
             counter.next_id += 1;
             counter.total_games += 1;
@@ -130,7 +135,7 @@ pub mod egs_system {
             };
             world.write_model(@token);
 
-            self.emit(TokenMinted { token_id, owner: caller.into(), table_id });
+            self.emit(TokenMinted { token_id, owner: caller, table_id });
 
             token_id
         }
@@ -142,7 +147,11 @@ pub mod egs_system {
 
             let mut token: GameToken = world.read_model(token_id);
             assert(!token.game_over, 'game already over');
-            assert(token.owner == get_caller_address(), 'not token owner');
+            // C2 FIX: Allow token owner OR arena operator
+            let caller = get_caller_address();
+            assert(
+                token.owner == caller || is_operator(ref world, caller), 'not authorized',
+            );
 
             token.hands_played = hands_played;
             token.score = score;
@@ -156,7 +165,11 @@ pub mod egs_system {
 
             let mut token: GameToken = world.read_model(token_id);
             assert(!token.game_over, 'game already over');
-            assert(token.owner == get_caller_address(), 'not token owner');
+            // C2 FIX: Allow token owner OR arena operator
+            let caller = get_caller_address();
+            assert(
+                token.owner == caller || is_operator(ref world, caller), 'not authorized',
+            );
 
             token.score = final_score;
             token.game_over = true;
@@ -175,6 +188,11 @@ pub mod egs_system {
         fn game_metadata(self: @ContractState) -> (felt252, felt252, felt252) {
             ('PokerStarks', 'ZK Poker Arena', 1)
         }
+    }
+
+    fn is_operator(ref world: dojo::world::WorldStorage, caller: ContractAddress) -> bool {
+        let config: ArenaConfig = world.read_model(0_u8);
+        config.operator == caller
     }
 
     #[generate_trait]
