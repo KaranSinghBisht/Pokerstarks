@@ -585,13 +585,22 @@ export function StarknetProvider({ children }: { children: ReactNode }) {
       const sdk = getStarkZap();
       const origin = typeof window !== "undefined" ? window.location.origin : "";
 
+      // Fetch a short-lived auth token for wallet API calls
+      const tokenRes = await fetch(`${origin}/api/wallet/token`, { method: "POST" });
+      const { token: apiToken } = tokenRes.ok
+        ? await tokenRes.json()
+        : { token: "" };
+
       const { wallet } = await sdk.onboard({
         strategy: OnboardStrategy.Privy,
         privy: {
           resolve: async () => {
             const walletRes = await fetch(`${origin}/api/wallet/starknet`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...(apiToken ? { "x-api-token": apiToken } : {}),
+              },
             });
             if (!walletRes.ok) {
               const err = await walletRes.json().catch(() => ({}));
@@ -602,6 +611,7 @@ export function StarknetProvider({ children }: { children: ReactNode }) {
               walletId: w.id,
               publicKey: w.publicKey,
               serverUrl: `${origin}/api/wallet/sign`,
+              serverHeaders: apiToken ? { "x-api-token": apiToken } : {},
             };
           },
         },
