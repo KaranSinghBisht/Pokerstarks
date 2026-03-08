@@ -18,3 +18,42 @@ pub fn card_to_suit(card_id: u8) -> u8 {
 pub fn rank_suit_to_card(rank: u8, suit: u8) -> u8 {
     rank * 4 + suit
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{card_to_rank, card_to_suit, rank_suit_to_card};
+
+    #[test]
+    fn test_card_encoding_boundaries() {
+        // Card 0 = 2 of clubs
+        assert(card_to_rank(0) == 0, '2c rank=0');
+        assert(card_to_suit(0) == 0, '2c suit=0');
+
+        // Card 51 = Ace of spades
+        assert(card_to_rank(51) == 12, 'As rank=12');
+        assert(card_to_suit(51) == 3, 'As suit=3');
+    }
+
+    #[test]
+    fn test_roundtrip_all_cards() {
+        let mut card_id: u8 = 0;
+        while card_id < 52 {
+            let rank = card_to_rank(card_id);
+            let suit = card_to_suit(card_id);
+            let reconstructed = rank_suit_to_card(rank, suit);
+            assert(reconstructed == card_id, 'roundtrip failed');
+            card_id += 1;
+        };
+    }
+
+    #[test]
+    fn test_specific_cards() {
+        // King of hearts = rank 11, suit 2
+        assert(rank_suit_to_card(11, 2) == 46, 'Kh=46');
+        assert(card_to_rank(46) == 11, 'Kh rank');
+        assert(card_to_suit(46) == 2, 'Kh suit');
+
+        // 10 of diamonds = rank 8, suit 1
+        assert(rank_suit_to_card(8, 1) == 33, '10d=33');
+    }
+}

@@ -178,3 +178,32 @@ pub fn shl_u8(val: u8, shift: u8) -> u8 {
     assert(false, 'shl_u8: shift out of range');
     0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::shl_u8;
+
+    #[test]
+    fn test_shl_u8_all_shifts() {
+        assert(shl_u8(1, 0) == 1, 'shift 0');
+        assert(shl_u8(1, 1) == 2, 'shift 1');
+        assert(shl_u8(1, 2) == 4, 'shift 2');
+        assert(shl_u8(1, 3) == 8, 'shift 3');
+        assert(shl_u8(1, 4) == 16, 'shift 4');
+        assert(shl_u8(1, 5) == 32, 'shift 5');
+        assert(shl_u8(1, 6) == 64, 'shift 6');
+    }
+
+    #[test]
+    fn test_shl_u8_bitmask() {
+        // Build eligible mask for seats 0, 2, 5
+        let mask = shl_u8(1, 0) | shl_u8(1, 2) | shl_u8(1, 5);
+        assert(mask == 37, 'mask=1+4+32=37'); // 0b100101
+    }
+
+    #[test]
+    #[should_panic(expected: 'shl_u8: shift out of range')]
+    fn test_shl_u8_overflow() {
+        shl_u8(1, 7);
+    }
+}

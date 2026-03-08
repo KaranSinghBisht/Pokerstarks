@@ -516,4 +516,207 @@ mod tests {
         let (_r2, tb2) = evaluate_best_hand(hand2.span());
         assert(tb1 > tb2, 'hand1 should have higher tb');
     }
+
+    // ── Additional edge case tests ──
+
+    #[test]
+    fn test_straight_flush_low() {
+        // 5-high straight flush (A-2-3-4-5 of spades)
+        let hand = make_hand(
+            rank_suit_to_card(12, 3), // As
+            rank_suit_to_card(0, 3),  // 2s
+            rank_suit_to_card(1, 3),  // 3s
+            rank_suit_to_card(2, 3),  // 4s
+            rank_suit_to_card(3, 3),  // 5s
+            rank_suit_to_card(8, 0),  // 10c (junk)
+            rank_suit_to_card(9, 1),  // Jd (junk)
+        );
+        let (rank, tb) = evaluate_best_hand(hand.span());
+        assert(rank == 9, 'should be straight flush');
+        assert(tb == 3, 'wheel SF high is 5');
+    }
+
+    #[test]
+    fn test_split_pot_identical_hands() {
+        // Two identical full houses (both pick KKK-QQ from community)
+        // Hole cards are irrelevant lower cards
+        // Community: Kc Kd Kh Qc Qd
+        let hand1 = make_hand(
+            rank_suit_to_card(11, 0), // Kc
+            rank_suit_to_card(11, 1), // Kd
+            rank_suit_to_card(11, 2), // Kh
+            rank_suit_to_card(10, 0), // Qc
+            rank_suit_to_card(10, 1), // Qd
+            rank_suit_to_card(0, 0),  // 2c (hole 1)
+            rank_suit_to_card(1, 0),  // 3c (hole 2)
+        );
+        let hand2 = make_hand(
+            rank_suit_to_card(11, 0), // Kc
+            rank_suit_to_card(11, 1), // Kd
+            rank_suit_to_card(11, 2), // Kh
+            rank_suit_to_card(10, 0), // Qc
+            rank_suit_to_card(10, 1), // Qd
+            rank_suit_to_card(4, 1),  // 6d (hole 1)
+            rank_suit_to_card(5, 2),  // 7h (hole 2)
+        );
+        let (r1, tb1) = evaluate_best_hand(hand1.span());
+        let (r2, tb2) = evaluate_best_hand(hand2.span());
+        assert(r1 == r2, 'same rank');
+        assert(tb1 == tb2, 'same tiebreaker = split');
+    }
+
+    #[test]
+    fn test_kicker_decides_pair() {
+        // Both have pair of aces, different kickers
+        let hand1 = make_hand(
+            rank_suit_to_card(12, 0), // Ac
+            rank_suit_to_card(12, 1), // Ad
+            rank_suit_to_card(11, 2), // Kh (kicker)
+            rank_suit_to_card(8, 3),  // 10s
+            rank_suit_to_card(5, 0),  // 7c
+            rank_suit_to_card(2, 1),  // 4d
+            rank_suit_to_card(0, 2),  // 2h
+        );
+        let hand2 = make_hand(
+            rank_suit_to_card(12, 0), // Ac
+            rank_suit_to_card(12, 1), // Ad
+            rank_suit_to_card(10, 2), // Qh (kicker, lower than K)
+            rank_suit_to_card(8, 3),  // 10s
+            rank_suit_to_card(5, 0),  // 7c
+            rank_suit_to_card(2, 1),  // 4d
+            rank_suit_to_card(0, 2),  // 2h
+        );
+        let (r1, tb1) = evaluate_best_hand(hand1.span());
+        let (r2, tb2) = evaluate_best_hand(hand2.span());
+        assert(r1 == 2, 'hand1 one pair');
+        assert(r2 == 2, 'hand2 one pair');
+        assert(tb1 > tb2, 'king kicker beats queen');
+    }
+
+    #[test]
+    fn test_full_house_trips_rank_priority() {
+        // Full house KKK-QQ vs QQQ-KK — KKK wins
+        let hand1 = make_hand(
+            rank_suit_to_card(11, 0), // Kc
+            rank_suit_to_card(11, 1), // Kd
+            rank_suit_to_card(11, 2), // Kh
+            rank_suit_to_card(10, 0), // Qc
+            rank_suit_to_card(10, 1), // Qd
+            rank_suit_to_card(0, 0),  // 2c
+            rank_suit_to_card(1, 1),  // 3d
+        );
+        let hand2 = make_hand(
+            rank_suit_to_card(10, 0), // Qc
+            rank_suit_to_card(10, 1), // Qd
+            rank_suit_to_card(10, 2), // Qh
+            rank_suit_to_card(11, 0), // Kc
+            rank_suit_to_card(11, 1), // Kd
+            rank_suit_to_card(0, 0),  // 2c
+            rank_suit_to_card(1, 1),  // 3d
+        );
+        let (r1, tb1) = evaluate_best_hand(hand1.span());
+        let (r2, tb2) = evaluate_best_hand(hand2.span());
+        assert(r1 == 7, 'hand1 full house');
+        assert(r2 == 7, 'hand2 full house');
+        assert(tb1 > tb2, 'KKK-QQ beats QQQ-KK');
+    }
+
+    #[test]
+    fn test_broadway_straight() {
+        // A-K-Q-J-10 mixed suits (broadway straight, not flush)
+        let hand = make_hand(
+            rank_suit_to_card(12, 0), // Ac
+            rank_suit_to_card(11, 1), // Kd
+            rank_suit_to_card(10, 2), // Qh
+            rank_suit_to_card(9, 3),  // Js
+            rank_suit_to_card(8, 0),  // 10c
+            rank_suit_to_card(5, 1),  // 7d (junk)
+            rank_suit_to_card(2, 2),  // 4h (junk)
+        );
+        let (rank, tb) = evaluate_best_hand(hand.span());
+        assert(rank == 5, 'should be straight');
+        assert(tb == 12, 'ace-high straight');
+    }
+
+    #[test]
+    fn test_flush_beats_straight() {
+        // Flush should beat a straight
+        let flush_hand = make_hand(
+            rank_suit_to_card(12, 0), // Ac
+            rank_suit_to_card(10, 0), // Qc
+            rank_suit_to_card(7, 0),  // 9c
+            rank_suit_to_card(5, 0),  // 7c
+            rank_suit_to_card(2, 0),  // 4c
+            rank_suit_to_card(0, 1),  // 2d (junk)
+            rank_suit_to_card(1, 2),  // 3h (junk)
+        );
+        let straight_hand = make_hand(
+            rank_suit_to_card(8, 0),  // 10c
+            rank_suit_to_card(7, 1),  // 9d
+            rank_suit_to_card(6, 2),  // 8h
+            rank_suit_to_card(5, 3),  // 7s
+            rank_suit_to_card(4, 0),  // 6c
+            rank_suit_to_card(0, 1),  // 2d (junk)
+            rank_suit_to_card(1, 2),  // 3h (junk)
+        );
+        let (r_flush, _) = evaluate_best_hand(flush_hand.span());
+        let (r_straight, _) = evaluate_best_hand(straight_hand.span());
+        assert(r_flush > r_straight, 'flush beats straight');
+    }
+
+    #[test]
+    fn test_four_of_kind_kicker() {
+        // Both have four 8s, different kickers
+        let hand1 = make_hand(
+            rank_suit_to_card(6, 0), // 8c
+            rank_suit_to_card(6, 1), // 8d
+            rank_suit_to_card(6, 2), // 8h
+            rank_suit_to_card(6, 3), // 8s
+            rank_suit_to_card(12, 0), // Ac (kicker)
+            rank_suit_to_card(0, 1),  // 2d
+            rank_suit_to_card(1, 2),  // 3h
+        );
+        let hand2 = make_hand(
+            rank_suit_to_card(6, 0), // 8c
+            rank_suit_to_card(6, 1), // 8d
+            rank_suit_to_card(6, 2), // 8h
+            rank_suit_to_card(6, 3), // 8s
+            rank_suit_to_card(11, 0), // Kc (kicker)
+            rank_suit_to_card(0, 1),  // 2d
+            rank_suit_to_card(1, 2),  // 3h
+        );
+        let (r1, tb1) = evaluate_best_hand(hand1.span());
+        let (r2, tb2) = evaluate_best_hand(hand2.span());
+        assert(r1 == 8, 'four of a kind');
+        assert(r2 == 8, 'four of a kind');
+        assert(tb1 > tb2, 'ace kicker beats king');
+    }
+
+    #[test]
+    fn test_two_pair_kicker() {
+        // Both have AA-KK, different fifth card
+        let hand1 = make_hand(
+            rank_suit_to_card(12, 0), // Ac
+            rank_suit_to_card(12, 1), // Ad
+            rank_suit_to_card(11, 0), // Kc
+            rank_suit_to_card(11, 1), // Kd
+            rank_suit_to_card(10, 2), // Qh (kicker)
+            rank_suit_to_card(0, 3),  // 2s
+            rank_suit_to_card(1, 0),  // 3c
+        );
+        let hand2 = make_hand(
+            rank_suit_to_card(12, 0), // Ac
+            rank_suit_to_card(12, 1), // Ad
+            rank_suit_to_card(11, 0), // Kc
+            rank_suit_to_card(11, 1), // Kd
+            rank_suit_to_card(9, 2),  // Jh (kicker)
+            rank_suit_to_card(0, 3),  // 2s
+            rank_suit_to_card(1, 0),  // 3c
+        );
+        let (r1, tb1) = evaluate_best_hand(hand1.span());
+        let (r2, tb2) = evaluate_best_hand(hand2.span());
+        assert(r1 == 3, 'two pair');
+        assert(r2 == 3, 'two pair');
+        assert(tb1 > tb2, 'queen kicker beats jack');
+    }
 }
