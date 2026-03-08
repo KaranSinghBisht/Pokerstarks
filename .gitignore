@@ -74,3 +74,9 @@ contracts/.next/
 .env
 .env.*
 !.env.example
+scripts/node_modules
+contracts/node_modules
+contracts/package.json
+contracts/package-lock.json
+contracts/declare-v6.js
+contracts/deploy-and-declare.js

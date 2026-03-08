@@ -1490,8 +1490,647 @@
   },
   "contracts": [
     {
+      "address": "0x428f1303c8d09c848ae599e78e43d337f8fe6dd379075c133e4230170ed3b2a",
+      "class_hash": "0x3dda49f856de7fbb70d4906d887278703e723a0680e6b9ce4765dd78821137a",
+      "abi": [
+        {
+          "type": "impl",
+          "name": "arena_system__ContractImpl",
+          "interface_name": "dojo::contract::interface::IContract"
+        },
+        {
+          "type": "interface",
+          "name": "dojo::contract::interface::IContract",
+          "items": []
+        },
+        {
+          "type": "impl",
+          "name": "DojoDeployedContractImpl",
+          "interface_name": "dojo::meta::interface::IDeployedResource"
+        },
+        {
+          "type": "struct",
+          "name": "core::byte_array::ByteArray",
+          "members": [
+            {
+              "name": "data",
+              "type": "core::array::Array::<core::bytes_31::bytes31>"
+            },
+            {
+              "name": "pending_word",
+              "type": "core::felt252"
+            },
+            {
+              "name": "pending_word_len",
+              "type": "core::integer::u32"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "dojo::meta::interface::IDeployedResource",
+          "items": [
+            {
+              "type": "function",
+              "name": "dojo_name",
+              "inputs": [],
+              "outputs": [
+                {
+                  "type": "core::byte_array::ByteArray"
+                }
+              ],
+              "state_mutability": "view"
+            }
+          ]
+        },
+        {
+          "type": "impl",
+          "name": "ArenaImpl",
+          "interface_name": "pokerstarks::systems::arena::IArena"
+        },
+        {
+          "type": "enum",
+          "name": "core::bool",
+          "variants": [
+            {
+              "name": "False",
+              "type": "()"
+            },
+            {
+              "name": "True",
+              "type": "()"
+            }
+          ]
+        },
+        {
+          "type": "struct",
+          "name": "core::array::Span::<core::integer::u32>",
+          "members": [
+            {
+              "name": "snapshot",
+              "type": "@core::array::Array::<core::integer::u32>"
+            }
+          ]
+        },
+        {
+          "type": "struct",
+          "name": "core::array::Span::<core::integer::i128>",
+          "members": [
+            {
+              "name": "snapshot",
+              "type": "@core::array::Array::<core::integer::i128>"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "pokerstarks::systems::arena::IArena",
+          "items": [
+            {
+              "type": "function",
+              "name": "register_agent",
+              "inputs": [
+                {
+                  "name": "name",
+                  "type": "core::felt252"
+                },
+                {
+                  "name": "agent_address",
+                  "type": "core::starknet::contract_address::ContractAddress"
+                },
+                {
+                  "name": "personality",
+                  "type": "core::felt252"
+                },
+                {
+                  "name": "agent_type",
+                  "type": "core::integer::u8"
+                },
+                {
+                  "name": "description",
+                  "type": "core::felt252"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::integer::u32"
+                }
+              ],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "deactivate_agent",
+              "inputs": [
+                {
+                  "name": "agent_id",
+                  "type": "core::integer::u32"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "update_agent_config",
+              "inputs": [
+                {
+                  "name": "agent_id",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "min_balance",
+                  "type": "core::integer::u128"
+                },
+                {
+                  "name": "max_buy_in",
+                  "type": "core::integer::u128"
+                },
+                {
+                  "name": "cooldown_seconds",
+                  "type": "core::integer::u64"
+                },
+                {
+                  "name": "auto_play",
+                  "type": "core::bool"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "deposit_chips",
+              "inputs": [
+                {
+                  "name": "agent_id",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "amount",
+                  "type": "core::integer::u128"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "withdraw_chips",
+              "inputs": [
+                {
+                  "name": "agent_id",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "amount",
+                  "type": "core::integer::u128"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "create_arena_match",
+              "inputs": [
+                {
+                  "name": "table_id",
+                  "type": "core::integer::u64"
+                },
+                {
+                  "name": "agent_ids",
+                  "type": "core::array::Span::<core::integer::u32>"
+                },
+                {
+                  "name": "buy_in",
+                  "type": "core::integer::u128"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::integer::u32"
+                }
+              ],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "record_result",
+              "inputs": [
+                {
+                  "name": "match_id",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "winner_agent_id",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "chip_deltas",
+                  "type": "core::array::Span::<core::integer::i128>"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "challenge_agent",
+              "inputs": [
+                {
+                  "name": "challenger_agent_id",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "challenged_agent_id",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "buy_in",
+                  "type": "core::integer::u128"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::integer::u32"
+                }
+              ],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "accept_challenge",
+              "inputs": [
+                {
+                  "name": "challenge_id",
+                  "type": "core::integer::u32"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "decline_challenge",
+              "inputs": [
+                {
+                  "name": "challenge_id",
+                  "type": "core::integer::u32"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "set_erc8004_identity",
+              "inputs": [
+                {
+                  "name": "agent_id",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "identity_address",
+                  "type": "core::starknet::contract_address::ContractAddress"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "cancel_stale_match",
+              "inputs": [
+                {
+                  "name": "match_id",
+                  "type": "core::integer::u32"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "set_operator",
+              "inputs": [
+                {
+                  "name": "operator",
+                  "type": "core::starknet::contract_address::ContractAddress"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "dojo_init",
+          "inputs": [],
+          "outputs": [],
+          "state_mutability": "view"
+        },
+        {
+          "type": "impl",
+          "name": "WorldProviderImpl",
+          "interface_name": "dojo::contract::components::world_provider::IWorldProvider"
+        },
+        {
+          "type": "struct",
+          "name": "dojo::world::iworld::IWorldDispatcher",
+          "members": [
+            {
+              "name": "contract_address",
+              "type": "core::starknet::contract_address::ContractAddress"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "dojo::contract::components::world_provider::IWorldProvider",
+          "items": [
+            {
+              "type": "function",
+              "name": "world_dispatcher",
+              "inputs": [],
+              "outputs": [
+                {
+                  "type": "dojo::world::iworld::IWorldDispatcher"
+                }
+              ],
+              "state_mutability": "view"
+            }
+          ]
+        },
+        {
+          "type": "impl",
+          "name": "UpgradeableImpl",
+          "interface_name": "dojo::contract::components::upgradeable::IUpgradeable"
+        },
+        {
+          "type": "interface",
+          "name": "dojo::contract::components::upgradeable::IUpgradeable",
+          "items": [
+            {
+              "type": "function",
+              "name": "upgrade",
+              "inputs": [
+                {
+                  "name": "new_class_hash",
+                  "type": "core::starknet::class_hash::ClassHash"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            }
+          ]
+        },
+        {
+          "type": "constructor",
+          "name": "constructor",
+          "inputs": []
+        },
+        {
+          "type": "event",
+          "name": "dojo::contract::components::upgradeable::upgradeable_cpt::Upgraded",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "class_hash",
+              "type": "core::starknet::class_hash::ClassHash",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "dojo::contract::components::upgradeable::upgradeable_cpt::Event",
+          "kind": "enum",
+          "variants": [
+            {
+              "name": "Upgraded",
+              "type": "dojo::contract::components::upgradeable::upgradeable_cpt::Upgraded",
+              "kind": "nested"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "dojo::contract::components::world_provider::world_provider_cpt::Event",
+          "kind": "enum",
+          "variants": []
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::arena::arena_system::AgentIdentityLinked",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "agent_id",
+              "type": "core::integer::u32",
+              "kind": "key"
+            },
+            {
+              "name": "identity_address",
+              "type": "core::starknet::contract_address::ContractAddress",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::arena::arena_system::AgentRegistered",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "agent_id",
+              "type": "core::integer::u32",
+              "kind": "key"
+            },
+            {
+              "name": "owner",
+              "type": "core::starknet::contract_address::ContractAddress",
+              "kind": "data"
+            },
+            {
+              "name": "name",
+              "type": "core::felt252",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::arena::arena_system::MatchCreated",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "match_id",
+              "type": "core::integer::u32",
+              "kind": "key"
+            },
+            {
+              "name": "table_id",
+              "type": "core::integer::u64",
+              "kind": "data"
+            },
+            {
+              "name": "num_agents",
+              "type": "core::integer::u8",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::arena::arena_system::MatchCompleted",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "match_id",
+              "type": "core::integer::u32",
+              "kind": "key"
+            },
+            {
+              "name": "winner_agent_id",
+              "type": "core::integer::u32",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::arena::arena_system::ChallengeCreated",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "challenge_id",
+              "type": "core::integer::u32",
+              "kind": "key"
+            },
+            {
+              "name": "challenger",
+              "type": "core::integer::u32",
+              "kind": "data"
+            },
+            {
+              "name": "challenged",
+              "type": "core::integer::u32",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "enum",
+          "name": "pokerstarks::models::enums::ChallengeStatus",
+          "variants": [
+            {
+              "name": "Pending",
+              "type": "()"
+            },
+            {
+              "name": "Accepted",
+              "type": "()"
+            },
+            {
+              "name": "Declined",
+              "type": "()"
+            },
+            {
+              "name": "Expired",
+              "type": "()"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::arena::arena_system::ChallengeResolved",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "challenge_id",
+              "type": "core::integer::u32",
+              "kind": "key"
+            },
+            {
+              "name": "status",
+              "type": "pokerstarks::models::enums::ChallengeStatus",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::arena::arena_system::Event",
+          "kind": "enum",
+          "variants": [
+            {
+              "name": "UpgradeableEvent",
+              "type": "dojo::contract::components::upgradeable::upgradeable_cpt::Event",
+              "kind": "nested"
+            },
+            {
+              "name": "WorldProviderEvent",
+              "type": "dojo::contract::components::world_provider::world_provider_cpt::Event",
+              "kind": "nested"
+            },
+            {
+              "name": "AgentIdentityLinked",
+              "type": "pokerstarks::systems::arena::arena_system::AgentIdentityLinked",
+              "kind": "nested"
+            },
+            {
+              "name": "AgentRegistered",
+              "type": "pokerstarks::systems::arena::arena_system::AgentRegistered",
+              "kind": "nested"
+            },
+            {
+              "name": "MatchCreated",
+              "type": "pokerstarks::systems::arena::arena_system::MatchCreated",
+              "kind": "nested"
+            },
+            {
+              "name": "MatchCompleted",
+              "type": "pokerstarks::systems::arena::arena_system::MatchCompleted",
+              "kind": "nested"
+            },
+            {
+              "name": "ChallengeCreated",
+              "type": "pokerstarks::systems::arena::arena_system::ChallengeCreated",
+              "kind": "nested"
+            },
+            {
+              "name": "ChallengeResolved",
+              "type": "pokerstarks::systems::arena::arena_system::ChallengeResolved",
+              "kind": "nested"
+            }
+          ]
+        }
+      ],
+      "init_calldata": [],
+      "tag": "pokerstarks-arena_system",
+      "selector": "0x651a4aa1257ad70bc8019de5e25447ce03b7b46daee9c272ab5f6b9751fb68d",
+      "systems": [
+        "register_agent",
+        "deactivate_agent",
+        "update_agent_config",
+        "deposit_chips",
+        "withdraw_chips",
+        "create_arena_match",
+        "record_result",
+        "challenge_agent",
+        "accept_challenge",
+        "decline_challenge",
+        "set_erc8004_identity",
+        "cancel_stale_match",
+        "set_operator",
+        "upgrade"
+      ]
+    },
+    {
       "address": "0x17f3f16ab65bfee5fcd4f68b1aef0d6660ea7117430d639c442d3ee07f63d0f",
-      "class_hash": "0x4a1e4ebecdd9e6858019fa3afe1bf889145aabe7a2d954d0f04909feeaa22c7",
+      "class_hash": "0x520e9afda153b9eadf40e3808e3a99527a2846a404842ba24eac923ed4eafbb",
       "abi": [
         {
           "type": "impl",
@@ -1950,7 +2589,7 @@
     },
     {
       "address": "0x36901ad9a3a6185071f303f7f9a35f5cab5fe2b86ef9ef105fe148e423dedf1",
-      "class_hash": "0x5bfe9dc91029668883a0569f28165386b9ba3e6be3d7dc7342ddcfd539ed377",
+      "class_hash": "0x1177c45df655c409ee47674e0805d399673b5973b01e5a2e9cc95de40c814e8",
       "abi": [
         {
           "type": "impl",
@@ -2194,8 +2833,613 @@
       ]
     },
     {
+      "address": "0x4d5afe4682878c106c2024b599960dc52adc51b32a78671d8304004b8b4e249",
+      "class_hash": "0x7239482741e59fd044f0a70db93a9d88f52ab74962a7a332a4b031ad9f2021",
+      "abi": [
+        {
+          "type": "impl",
+          "name": "egs_system__ContractImpl",
+          "interface_name": "dojo::contract::interface::IContract"
+        },
+        {
+          "type": "interface",
+          "name": "dojo::contract::interface::IContract",
+          "items": []
+        },
+        {
+          "type": "impl",
+          "name": "DojoDeployedContractImpl",
+          "interface_name": "dojo::meta::interface::IDeployedResource"
+        },
+        {
+          "type": "struct",
+          "name": "core::byte_array::ByteArray",
+          "members": [
+            {
+              "name": "data",
+              "type": "core::array::Array::<core::bytes_31::bytes31>"
+            },
+            {
+              "name": "pending_word",
+              "type": "core::felt252"
+            },
+            {
+              "name": "pending_word_len",
+              "type": "core::integer::u32"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "dojo::meta::interface::IDeployedResource",
+          "items": [
+            {
+              "type": "function",
+              "name": "dojo_name",
+              "inputs": [],
+              "outputs": [
+                {
+                  "type": "core::byte_array::ByteArray"
+                }
+              ],
+              "state_mutability": "view"
+            }
+          ]
+        },
+        {
+          "type": "impl",
+          "name": "SRC5Impl",
+          "interface_name": "pokerstarks::systems::egs::ISRC5"
+        },
+        {
+          "type": "enum",
+          "name": "core::bool",
+          "variants": [
+            {
+              "name": "False",
+              "type": "()"
+            },
+            {
+              "name": "True",
+              "type": "()"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "pokerstarks::systems::egs::ISRC5",
+          "items": [
+            {
+              "type": "function",
+              "name": "supports_interface",
+              "inputs": [
+                {
+                  "name": "interface_id",
+                  "type": "core::felt252"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::bool"
+                }
+              ],
+              "state_mutability": "view"
+            }
+          ]
+        },
+        {
+          "type": "impl",
+          "name": "MinigameTokenDataImpl",
+          "interface_name": "pokerstarks::systems::egs::IMinigameTokenData"
+        },
+        {
+          "type": "struct",
+          "name": "core::array::Span::<core::felt252>",
+          "members": [
+            {
+              "name": "snapshot",
+              "type": "@core::array::Array::<core::felt252>"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "pokerstarks::systems::egs::IMinigameTokenData",
+          "items": [
+            {
+              "type": "function",
+              "name": "score",
+              "inputs": [
+                {
+                  "name": "token_id",
+                  "type": "core::felt252"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::integer::u64"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "game_over",
+              "inputs": [
+                {
+                  "name": "token_id",
+                  "type": "core::felt252"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::bool"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "score_batch",
+              "inputs": [
+                {
+                  "name": "token_ids",
+                  "type": "core::array::Span::<core::felt252>"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::array::Array::<core::integer::u64>"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "game_over_batch",
+              "inputs": [
+                {
+                  "name": "token_ids",
+                  "type": "core::array::Span::<core::felt252>"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::array::Array::<core::bool>"
+                }
+              ],
+              "state_mutability": "view"
+            }
+          ]
+        },
+        {
+          "type": "impl",
+          "name": "MinigameDetailsImpl",
+          "interface_name": "pokerstarks::systems::egs::IMinigameDetails"
+        },
+        {
+          "type": "struct",
+          "name": "pokerstarks::systems::egs::GameDetail",
+          "members": [
+            {
+              "name": "name",
+              "type": "core::felt252"
+            },
+            {
+              "name": "value",
+              "type": "core::felt252"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "pokerstarks::systems::egs::IMinigameDetails",
+          "items": [
+            {
+              "type": "function",
+              "name": "token_name",
+              "inputs": [
+                {
+                  "name": "token_id",
+                  "type": "core::felt252"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::byte_array::ByteArray"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "token_description",
+              "inputs": [
+                {
+                  "name": "token_id",
+                  "type": "core::felt252"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::byte_array::ByteArray"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "game_details",
+              "inputs": [
+                {
+                  "name": "token_id",
+                  "type": "core::felt252"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::array::Array::<pokerstarks::systems::egs::GameDetail>"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "token_name_batch",
+              "inputs": [
+                {
+                  "name": "token_ids",
+                  "type": "core::array::Span::<core::felt252>"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::array::Array::<core::byte_array::ByteArray>"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "token_description_batch",
+              "inputs": [
+                {
+                  "name": "token_ids",
+                  "type": "core::array::Span::<core::felt252>"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::array::Array::<core::byte_array::ByteArray>"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "game_details_batch",
+              "inputs": [
+                {
+                  "name": "token_ids",
+                  "type": "core::array::Span::<core::felt252>"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::array::Array::<core::array::Array::<pokerstarks::systems::egs::GameDetail>>"
+                }
+              ],
+              "state_mutability": "view"
+            }
+          ]
+        },
+        {
+          "type": "impl",
+          "name": "PokerstarksEGSImpl",
+          "interface_name": "pokerstarks::systems::egs::IPokerstarksEGS"
+        },
+        {
+          "type": "struct",
+          "name": "core::integer::u256",
+          "members": [
+            {
+              "name": "low",
+              "type": "core::integer::u128"
+            },
+            {
+              "name": "high",
+              "type": "core::integer::u128"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "pokerstarks::systems::egs::IPokerstarksEGS",
+          "items": [
+            {
+              "type": "function",
+              "name": "mint",
+              "inputs": [
+                {
+                  "name": "table_id",
+                  "type": "core::integer::u64"
+                },
+                {
+                  "name": "agent_name",
+                  "type": "core::felt252"
+                }
+              ],
+              "outputs": [
+                {
+                  "type": "core::felt252"
+                }
+              ],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "update_score",
+              "inputs": [
+                {
+                  "name": "token_id",
+                  "type": "core::felt252"
+                },
+                {
+                  "name": "hands_played",
+                  "type": "core::integer::u32"
+                },
+                {
+                  "name": "score",
+                  "type": "core::integer::u64"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "complete_session",
+              "inputs": [
+                {
+                  "name": "token_id",
+                  "type": "core::felt252"
+                },
+                {
+                  "name": "final_score",
+                  "type": "core::integer::u64"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            },
+            {
+              "type": "function",
+              "name": "game_count",
+              "inputs": [],
+              "outputs": [
+                {
+                  "type": "core::integer::u256"
+                }
+              ],
+              "state_mutability": "view"
+            },
+            {
+              "type": "function",
+              "name": "game_metadata",
+              "inputs": [],
+              "outputs": [
+                {
+                  "type": "(core::felt252, core::felt252, core::felt252)"
+                }
+              ],
+              "state_mutability": "view"
+            }
+          ]
+        },
+        {
+          "type": "function",
+          "name": "dojo_init",
+          "inputs": [],
+          "outputs": [],
+          "state_mutability": "view"
+        },
+        {
+          "type": "impl",
+          "name": "WorldProviderImpl",
+          "interface_name": "dojo::contract::components::world_provider::IWorldProvider"
+        },
+        {
+          "type": "struct",
+          "name": "dojo::world::iworld::IWorldDispatcher",
+          "members": [
+            {
+              "name": "contract_address",
+              "type": "core::starknet::contract_address::ContractAddress"
+            }
+          ]
+        },
+        {
+          "type": "interface",
+          "name": "dojo::contract::components::world_provider::IWorldProvider",
+          "items": [
+            {
+              "type": "function",
+              "name": "world_dispatcher",
+              "inputs": [],
+              "outputs": [
+                {
+                  "type": "dojo::world::iworld::IWorldDispatcher"
+                }
+              ],
+              "state_mutability": "view"
+            }
+          ]
+        },
+        {
+          "type": "impl",
+          "name": "UpgradeableImpl",
+          "interface_name": "dojo::contract::components::upgradeable::IUpgradeable"
+        },
+        {
+          "type": "interface",
+          "name": "dojo::contract::components::upgradeable::IUpgradeable",
+          "items": [
+            {
+              "type": "function",
+              "name": "upgrade",
+              "inputs": [
+                {
+                  "name": "new_class_hash",
+                  "type": "core::starknet::class_hash::ClassHash"
+                }
+              ],
+              "outputs": [],
+              "state_mutability": "external"
+            }
+          ]
+        },
+        {
+          "type": "constructor",
+          "name": "constructor",
+          "inputs": []
+        },
+        {
+          "type": "event",
+          "name": "dojo::contract::components::upgradeable::upgradeable_cpt::Upgraded",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "class_hash",
+              "type": "core::starknet::class_hash::ClassHash",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "dojo::contract::components::upgradeable::upgradeable_cpt::Event",
+          "kind": "enum",
+          "variants": [
+            {
+              "name": "Upgraded",
+              "type": "dojo::contract::components::upgradeable::upgradeable_cpt::Upgraded",
+              "kind": "nested"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "dojo::contract::components::world_provider::world_provider_cpt::Event",
+          "kind": "enum",
+          "variants": []
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::egs::egs_system::ScoreUpdate",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "token_id",
+              "type": "core::felt252",
+              "kind": "key"
+            },
+            {
+              "name": "score",
+              "type": "core::integer::u64",
+              "kind": "data"
+            },
+            {
+              "name": "hands_played",
+              "type": "core::integer::u32",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::egs::egs_system::GameOver",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "token_id",
+              "type": "core::felt252",
+              "kind": "key"
+            },
+            {
+              "name": "final_score",
+              "type": "core::integer::u64",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::egs::egs_system::TokenMinted",
+          "kind": "struct",
+          "members": [
+            {
+              "name": "token_id",
+              "type": "core::felt252",
+              "kind": "key"
+            },
+            {
+              "name": "owner",
+              "type": "core::starknet::contract_address::ContractAddress",
+              "kind": "data"
+            },
+            {
+              "name": "table_id",
+              "type": "core::integer::u64",
+              "kind": "data"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "pokerstarks::systems::egs::egs_system::Event",
+          "kind": "enum",
+          "variants": [
+            {
+              "name": "UpgradeableEvent",
+              "type": "dojo::contract::components::upgradeable::upgradeable_cpt::Event",
+              "kind": "nested"
+            },
+            {
+              "name": "WorldProviderEvent",
+              "type": "dojo::contract::components::world_provider::world_provider_cpt::Event",
+              "kind": "nested"
+            },
+            {
+              "name": "ScoreUpdate",
+              "type": "pokerstarks::systems::egs::egs_system::ScoreUpdate",
+              "kind": "nested"
+            },
+            {
+              "name": "GameOver",
+              "type": "pokerstarks::systems::egs::egs_system::GameOver",
+              "kind": "nested"
+            },
+            {
+              "name": "TokenMinted",
+              "type": "pokerstarks::systems::egs::egs_system::TokenMinted",
+              "kind": "nested"
+            }
+          ]
+        }
+      ],
+      "init_calldata": [],
+      "tag": "pokerstarks-egs_system",
+      "selector": "0x771a259a1bdf447d6bc52db0578d27892710b08f4ac32e5ab539701d7e69da9",
+      "systems": [
+        "mint",
+        "update_score",
+        "complete_session",
+        "upgrade"
+      ]
+    },
+    {
       "address": "0x39496df188be8cea81d3ac0258e60a8e7111dac1bbb353dec13caadd6cbab93",
-      "class_hash": "0x2f6e3bc7964ea598ecaa8936783c214e4a701187827df5eabeb46d9d4bf5653",
+      "class_hash": "0x13476cdec22157c9bc2d27705b41f300a2c142320e93f0b3b5f7c6a985b3eba",
       "abi": [
         {
           "type": "impl",
@@ -2471,7 +3715,7 @@
     },
     {
       "address": "0x5a04f9ae0a0abec7c6adfc523176ba17411a477bae2a7bff29fa93992892bdf",
-      "class_hash": "0x388568b9d086bc670e20914629fe08ad672a03bc0c5d17d429203722a170959",
+      "class_hash": "0x7c34fa1e4e528ac4d5427531135e5073406b2fbd94cef47065e5fa40a6955c8",
       "abi": [
         {
           "type": "impl",
@@ -2788,7 +4032,7 @@
     },
     {
       "address": "0x3876f692bb446bf047d821c93f8a516f0ebfef9bd3fcdae16f54ff2085d1882",
-      "class_hash": "0x2af4f2899d3dbe50e0f4fcb1570a0ceb8565bfb2cebd17ff3bc16487f3c792f",
+      "class_hash": "0x59c6e1e909dcf7c1aff3081cc9ef6825edd731b0c39e50579d4a565c295f688",
       "abi": [
         {
           "type": "impl",
@@ -2988,7 +4232,7 @@
     },
     {
       "address": "0x29b1ce42171363a1928f8b131cdaeb8c5f323aa56ea8adb9bf20505ac6afcc0",
-      "class_hash": "0x2e01ecc17c33e8be41030f97d51ce6cfbfe47d24823832998679d11b43cf100",
+      "class_hash": "0x598c2f0ac2c679512a043b1146a7b9fd5ff4c25e7a5d4206fc9230d51fb4d51",
       "abi": [
         {
           "type": "impl",
@@ -3417,7 +4661,7 @@
     },
     {
       "address": "0x63265f742cd6428b82026e94ba2e06d68c7ebcd97d7ec6779cab3c234ec8eb0",
-      "class_hash": "0x4690aecf44ddc355614bdc00f89630e7a2bdee4136d2babaf07c21cfed3ef2f",
+      "class_hash": "0x1babac73325ece283189456b0f085b08237beef185b1845d1cfc6c8bcca5f53",
       "abi": [
         {
           "type": "impl",
@@ -3620,9 +4864,57 @@
   "models": [
     {
       "members": [],
+      "class_hash": "0x581824266b1728b70f0e19f693031e1340ad8d5a267c48be79daab4340cf64",
+      "tag": "pokerstarks-AgentBankroll",
+      "selector": "0x2460fc11b216bada13ffa01386428f7609dc2e0d21169d16163d52442385b85"
+    },
+    {
+      "members": [],
+      "class_hash": "0x70f9621d7a50a9b34d786da74b1ff78c2a4d0e02af0dfb9e0665828115ed4f8",
+      "tag": "pokerstarks-AgentCounter",
+      "selector": "0x674d25cc41da7aecebb09040380fc9d2deb876920f66e2c769a938e256122ec"
+    },
+    {
+      "members": [],
+      "class_hash": "0x5519b1aa100ddec273ba9134bc514a8f1649e48252f263db6d979b8c0e3e9a3",
+      "tag": "pokerstarks-AgentProfile",
+      "selector": "0xfda6f5802b7ecb814c099347d35b8f78353ee6d3c2c20ff5237646b371344"
+    },
+    {
+      "members": [],
+      "class_hash": "0x1fbbf0481994041811024ca5a61909f84f630654c76cd07a2989cd99e5f5529",
+      "tag": "pokerstarks-ArenaConfig",
+      "selector": "0x4eae0f44b63ba4424226c0dbeb5378284a6bf2347721913d58bb799a3d3a275"
+    },
+    {
+      "members": [],
+      "class_hash": "0x17a2a741d7c60c3b9090b00353c2416960bc7110101a9931ba31db33268f83",
+      "tag": "pokerstarks-ArenaMatch",
+      "selector": "0x4716532165cbb9f506a251d2b008699fd8bd8f265fadd7076b7badf97af5de2"
+    },
+    {
+      "members": [],
+      "class_hash": "0x4f779f80d938127c3aca3f3696a572be1a5cfcb8e48f440de7e6c0187faf074",
+      "tag": "pokerstarks-ArenaMatchAgent",
+      "selector": "0x6e69ff1a8b49a9fbd08b489b266dafac6c2716984efab36a8e3d074b4864298"
+    },
+    {
+      "members": [],
       "class_hash": "0x1625e14e835cdcc3068bf43d3aede92df6456e679dc812e6fb9b2dfde2ff02d",
       "tag": "pokerstarks-CardDecryptionVote",
       "selector": "0x67d35e6aa926ce99a66fabbba3be162c0e0dff0619028953396cdf0ac1e23ee"
+    },
+    {
+      "members": [],
+      "class_hash": "0x793be1c45b710896a6fd5874ca792250c83ae65440ab6e9b8b8a0ccb7258c97",
+      "tag": "pokerstarks-Challenge",
+      "selector": "0x526949e5cccb5322fea04863a2af2e2f4b7926eb814607cad5d9e9cb24f0169"
+    },
+    {
+      "members": [],
+      "class_hash": "0x160f94a3cbd634538fbcfda1984fc0c3e83ff09d115b90664fc6209ed06eb26",
+      "tag": "pokerstarks-ChallengeCounter",
+      "selector": "0x58eed813a44b89e2a8a0b40a9cee3cd43db17155a73e476d635c8fa3de70842"
     },
     {
       "members": [],
@@ -3650,6 +4942,18 @@
     },
     {
       "members": [],
+      "class_hash": "0x59ef4a6b7ed5e144e6c84a4fc88daaee3ebd5a4d6b8f0e48a8508c19b31b3bf",
+      "tag": "pokerstarks-GameToken",
+      "selector": "0x19887096dc7970d88b9fe8ceec94e7731b9da476c70c8e60ff5e738fb966fe6"
+    },
+    {
+      "members": [],
+      "class_hash": "0x4fd46ed9bda25155891ad197b562773436e67638b120c451141e9d74392fb6",
+      "tag": "pokerstarks-GameTokenCounter",
+      "selector": "0x491b1659d92a7efbb838346c2698bf6fbf321326df3b733a6db664dca7942e"
+    },
+    {
+      "members": [],
       "class_hash": "0x2f87ec7b1cbc0db1517ba7e2bdc3250fca44fad2ee12f5205cabf4e9da6e6ea",
       "tag": "pokerstarks-Hand",
       "selector": "0x7f8e1c30e0609f92098b6aa002b5b410e215aaa8188a6b5b7d4c01b2e183cc1"
@@ -3659,6 +4963,12 @@
       "class_hash": "0x3bc0d813c49c0c8d1b02bf458bca18629eb3faad0504cfe5311e6ee315a8ff0",
       "tag": "pokerstarks-HandCounter",
       "selector": "0x197091fc53156765e5dc57166952f29a482e7eecd766a9a494b526e4763cfbb"
+    },
+    {
+      "members": [],
+      "class_hash": "0x177a8945a03ecbb33dadeec4ae0c4e3763bc45a3ead3e4631ec66281e1b0984",
+      "tag": "pokerstarks-MatchCounter",
+      "selector": "0x76a56e366f6c76470ed7642ab1995b2262d4f7f7de0ca14fd365c20f25296ce"
     },
     {
       "members": [],

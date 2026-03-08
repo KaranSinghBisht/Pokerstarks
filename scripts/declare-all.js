@@ -8,7 +8,7 @@ const { RpcProvider, Account, json, hash, CallData } = require('starknet');
 const fs = require('fs');
 const path = require('path');
 
-const RPC_URL = process.env.RPC_URL || 'https://api.cartridge.gg/x/starknet/sepolia';
+const RPC_URL = process.env.RPC_URL || 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/KEmw2v8CxO5WAqHZiM3SZ8Sd5WepP8R-';
 const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
 const ACCOUNT_ADDRESS = process.env.DEPLOYER_ADDRESS;
 
@@ -71,25 +71,34 @@ async function main() {
     console.log(`  Class hash: ${classHash}`);
     console.log(`  Compiled class hash: ${compiledClassHash}`);
 
-    try {
-      const declareResponse = await account.declare({
-        contract: sierraContract,
-        casm: casmContract,
-      });
+    let declared = false;
+    for (let attempt = 1; attempt <= 3 && !declared; attempt++) {
+      try {
+        if (attempt > 1) console.log(`  Retry ${attempt}/3...`);
+        const declareResponse = await account.declare({
+          contract: sierraContract,
+          casm: casmContract,
+        });
 
-      console.log(`  TX: ${declareResponse.transaction_hash}`);
-      console.log(`  Waiting for confirmation...`);
+        console.log(`  TX: ${declareResponse.transaction_hash}`);
+        console.log(`  Waiting for confirmation...`);
 
-      await provider.waitForTransaction(declareResponse.transaction_hash);
-      console.log(`  DECLARED!`);
-      results[baseName] = { classHash, compiledClassHash, status: 'declared', tx: declareResponse.transaction_hash };
-    } catch (e) {
-      console.log(`  FAILED: ${e.message?.substring(0, 200)}`);
-      results[baseName] = { classHash, compiledClassHash, status: 'failed', error: e.message?.substring(0, 200) };
+        await provider.waitForTransaction(declareResponse.transaction_hash);
+        console.log(`  DECLARED!`);
+        results[baseName] = { classHash, compiledClassHash, status: 'declared', tx: declareResponse.transaction_hash };
+        declared = true;
+      } catch (e) {
+        console.log(`  FAILED (attempt ${attempt}): ${e.message?.substring(0, 300)}`);
+        if (attempt === 3) {
+          results[baseName] = { classHash, compiledClassHash, status: 'failed', error: e.message?.substring(0, 300) };
+        } else {
+          await new Promise(r => setTimeout(r, 5000));
+        }
+      }
     }
 
-    // Small delay between declarations
-    await new Promise(r => setTimeout(r, 2000));
+    // Delay between declarations to avoid rate limiting
+    await new Promise(r => setTimeout(r, 3000));
   }
 
   console.log('\n=== RESULTS ===');
