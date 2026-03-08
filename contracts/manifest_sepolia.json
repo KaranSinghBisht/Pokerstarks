@@ -1491,7 +1491,7 @@
   "contracts": [
     {
       "address": "0x428f1303c8d09c848ae599e78e43d337f8fe6dd379075c133e4230170ed3b2a",
-      "class_hash": "0x3dda49f856de7fbb70d4906d887278703e723a0680e6b9ce4765dd78821137a",
+      "class_hash": "0x62ad1372e8787e6af9c230b84d1ceaedcca83492525d0a94214009845b93515",
       "abi": [
         {
           "type": "impl",
@@ -1829,7 +1829,7 @@
           "name": "dojo_init",
           "inputs": [],
           "outputs": [],
-          "state_mutability": "view"
+          "state_mutability": "external"
         },
         {
           "type": "impl",
@@ -2125,6 +2125,7 @@
         "set_erc8004_identity",
         "cancel_stale_match",
         "set_operator",
+        "dojo_init",
         "upgrade"
       ]
     },
@@ -2834,7 +2835,7 @@
     },
     {
       "address": "0x4d5afe4682878c106c2024b599960dc52adc51b32a78671d8304004b8b4e249",
-      "class_hash": "0x7239482741e59fd044f0a70db93a9d88f52ab74962a7a332a4b031ad9f2021",
+      "class_hash": "0x183f0fedcf3021d5b9b471a999219397b7ece973e15f1c303e79edfe062cdd9",
       "abi": [
         {
           "type": "impl",
@@ -4232,7 +4233,7 @@
     },
     {
       "address": "0x29b1ce42171363a1928f8b131cdaeb8c5f323aa56ea8adb9bf20505ac6afcc0",
-      "class_hash": "0x598c2f0ac2c679512a043b1146a7b9fd5ff4c25e7a5d4206fc9230d51fb4d51",
+      "class_hash": "0xd6e91585fb278394d50b03ca58e471d388472c8cb460855926fc5ba69f818b",
       "abi": [
         {
           "type": "impl",
