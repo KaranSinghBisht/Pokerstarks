@@ -1,6 +1,7 @@
 /// EGS-compliant game token system.
 ///
-/// Implements the standard `IMinigameTokenData` interface (felt252 token_id)
+/// Implements the standard `IMinigameTokenData` interface (felt252 token_id),
+/// the optional `IMinigameDetails` for rich token metadata,
 /// plus game-specific minting / scoring functions.
 
 #[starknet::interface]
@@ -9,6 +10,15 @@ pub trait IMinigameTokenData<T> {
     fn game_over(self: @T, token_id: felt252) -> bool;
     fn score_batch(self: @T, token_ids: Span<felt252>) -> Array<u64>;
     fn game_over_batch(self: @T, token_ids: Span<felt252>) -> Array<bool>;
+}
+
+/// EGS optional extension: rich token metadata.
+/// Returns structured name/value pairs describing game sessions.
+#[starknet::interface]
+pub trait IMinigameDetails<T> {
+    fn token_name(self: @T, token_id: felt252) -> felt252;
+    fn token_description(self: @T, token_id: felt252) -> felt252;
+    fn game_details(self: @T, token_id: felt252) -> Array<(felt252, felt252)>;
 }
 
 #[starknet::interface]
@@ -24,7 +34,7 @@ pub trait IPokerstarksEGS<T> {
 pub mod egs_system {
     use dojo::model::ModelStorage;
     use starknet::{get_caller_address, get_block_timestamp, ContractAddress};
-    use super::{IMinigameTokenData, IPokerstarksEGS};
+    use super::{IMinigameTokenData, IMinigameDetails, IPokerstarksEGS};
     use crate::models::egs::{GameToken, GameTokenCounter};
     use crate::models::arena::ArenaConfig;
 
@@ -99,6 +109,41 @@ pub mod egs_system {
                 i += 1;
             };
             results
+        }
+    }
+
+    // ── IMinigameDetails (EGS optional extension) ──
+
+    #[abi(embed_v0)]
+    impl MinigameDetailsImpl of IMinigameDetails<ContractState> {
+        fn token_name(self: @ContractState, token_id: felt252) -> felt252 {
+            let world = self.world_default();
+            let token: GameToken = world.read_model(token_id);
+            token.agent_name
+        }
+
+        fn token_description(self: @ContractState, token_id: felt252) -> felt252 {
+            let world = self.world_default();
+            let token: GameToken = world.read_model(token_id);
+            if token.game_over {
+                'Completed Session'
+            } else {
+                'Active Session'
+            }
+        }
+
+        fn game_details(self: @ContractState, token_id: felt252) -> Array<(felt252, felt252)> {
+            let world = self.world_default();
+            let token: GameToken = world.read_model(token_id);
+            array![
+                ('agent', token.agent_name),
+                ('table_id', token.table_id.into()),
+                ('hands_played', token.hands_played.into()),
+                ('score', token.score.into()),
+                ('game_over', if token.game_over { 1 } else { 0 }),
+                ('created_at', token.created_at.into()),
+                ('completed_at', token.completed_at.into()),
+            ]
         }
     }
 
