@@ -620,6 +620,36 @@ class PokerBot {
       (ph) => ph.player.toLowerCase() === this.config.address.toLowerCase(),
     );
 
+    // Submit own reveal tokens for own hole cards (needed for N-of-N consensus).
+    // During dealing, we only submitted tokens for OTHER players' cards.
+    // The contract now requires ALL N tokens for every card, including the owner's.
+    if (myPH && !myPH.hasFolded && myPH.player && myPH.player !== "0x0") {
+      for (const pos of [myPH.holeCard1Pos, myPH.holeCard2Pos]) {
+        const alreadySubmitted = gs.revealTokens.some(
+          (t) =>
+            t.handId === hand.handId &&
+            t.cardPosition === pos &&
+            t.playerSeat === mySeat.seatIndex &&
+            t.proofVerified,
+        );
+        if (alreadySubmitted) continue;
+
+        try {
+          const { token, proofInputs } = session.computeRevealTokenForCard(pos);
+          const proof = await generateProof("decrypt", proofInputs);
+          await this.chain.submitRevealToken(
+            hand.handId,
+            pos,
+            token.x.toString(),
+            token.y.toString(),
+            proof,
+          );
+        } catch (err) {
+          if (!this.isAlreadySubmittedError(err)) throw err;
+        }
+      }
+    }
+
     // Submit card decryptions for community cards + own hole cards
     const positions: Array<{ pos: number; isCommunity: boolean }> = [];
 

@@ -174,6 +174,7 @@ function startReasoningAggregator(port: number) {
 
 interface AgentData {
   agentId: number;
+  agentAddress: string;
   name: string;
   personality: string;
   eloRating: number;
@@ -238,6 +239,7 @@ async function fetchAvailableAgents(toriiUrl: string, worldAddress: string): Pro
 
     agents.push({
       agentId: Number(a.agent_id ?? 0),
+      agentAddress: String(a.agent_address ?? "0x0"),
       name: feltToString(a.name),
       personality: feltToString(a.personality) || "gto",
       eloRating: Number(a.elo_rating ?? 1000),
@@ -431,30 +433,29 @@ async function main() {
   // EGS token tracking per match
   const egsTokens = new Map<string, string[]>(); // matchKey -> token_ids
 
-  async function mintEgsTokens(agentIds: number[], tableId: number): Promise<string[]> {
+  async function mintEgsTokens(
+    agents: Array<{ agentId: number; agentAddress: string }>,
+    tableId: number,
+  ): Promise<string[]> {
     if (!config.egsEnabled || !egsAddress) return [];
 
-    // M1 NOTE: Token ID prediction via counter read is inherently racy if
-    // multiple matchmakers run concurrently. Since we enforce a single operator
-    // (C1 fix), this is acceptable. For robustness, parse TokenMinted events
-    // from the tx receipt once Torii event indexing is reliable.
     let nextId: bigint;
     try {
       nextId = await fetchEgsNextId(config.toriiUrl, config.worldAddress);
-      // M3 FIX: Counter now starts at 1
       if (nextId === 0n) nextId = 1n;
     } catch {
       nextId = 1n;
     }
 
     const tokenIds: string[] = [];
-    for (let i = 0; i < agentIds.length; i++) {
-      const agentId = agentIds[i];
+    for (let i = 0; i < agents.length; i++) {
+      const { agentId, agentAddress } = agents[i];
       try {
         const agentName = `0x${Buffer.from(`Agent#${agentId}`).toString("hex")}`;
-        await callEgs("mint", [tableId, agentName]);
+        // Pass bot's agent_address as token owner so the bot can update scores
+        await callEgs("mint", [agentAddress, tableId, agentName]);
         const predictedTokenId = String(nextId + BigInt(i));
-        log.info(`[EGS] Minted token ${predictedTokenId} for Agent#${agentId}`);
+        log.info(`[EGS] Minted token ${predictedTokenId} for Agent#${agentId} (owner: ${agentAddress})`);
         tokenIds.push(predictedTokenId);
       } catch (err) {
         log.warn(`[EGS] Failed to mint for Agent#${agentId}: ${err instanceof Error ? err.message : err}`);
@@ -487,7 +488,13 @@ async function main() {
 
     // Mint EGS tokens for each agent
     if (config.egsEnabled) {
-      const tokens = await mintEgsTokens(config.agentIds, config.tableId);
+      // Fetch agent profiles to get addresses for EGS token ownership
+      const allAgents = await fetchAvailableAgents(config.toriiUrl, config.worldAddress);
+      const agentObjs = config.agentIds.map((id) => {
+        const found = allAgents.find((a) => a.agentId === id);
+        return { agentId: id, agentAddress: found?.agentAddress ?? "0x0" };
+      });
+      const tokens = await mintEgsTokens(agentObjs, config.tableId);
       if (tokens.length > 0) {
         egsTokens.set(`manual-${config.tableId}`, tokens);
         log.info(`[EGS] Minted ${tokens.length} tokens for match`);
@@ -541,7 +548,11 @@ async function main() {
 
         // Mint EGS tokens
         if (config.egsEnabled) {
-          const tokens = await mintEgsTokens(agentIds, 0);
+          const agentObjs = matched.map((a) => ({
+            agentId: a.agentId,
+            agentAddress: a.agentAddress,
+          }));
+          const tokens = await mintEgsTokens(agentObjs, 0);
           if (tokens.length > 0) {
             egsTokens.set(`auto-${Date.now()}`, tokens);
             log.info(`[EGS] Minted ${tokens.length} tokens for auto match`);

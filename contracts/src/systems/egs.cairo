@@ -55,7 +55,9 @@ pub trait IMinigameDetails<T> {
 
 #[starknet::interface]
 pub trait IPokerstarksEGS<T> {
-    fn mint(ref self: T, table_id: u64, agent_name: felt252) -> felt252;
+    fn mint(
+        ref self: T, owner: starknet::ContractAddress, table_id: u64, agent_name: felt252,
+    ) -> felt252;
     fn update_score(ref self: T, token_id: felt252, hands_played: u32, score: u64);
     fn complete_session(ref self: T, token_id: felt252, final_score: u64);
     fn game_count(self: @T) -> u256;
@@ -256,13 +258,20 @@ pub mod egs_system {
     #[abi(embed_v0)]
     impl PokerstarksEGSImpl of IPokerstarksEGS<ContractState> {
         /// Mint a new EGS game token. Restricted to the arena operator to
-        /// prevent sybil spam on the leaderboard.
-        fn mint(ref self: ContractState, table_id: u64, agent_name: felt252) -> felt252 {
+        /// prevent sybil spam on the leaderboard. The `owner` parameter sets
+        /// who can update scores (typically the bot/agent account).
+        fn mint(
+            ref self: ContractState,
+            owner: ContractAddress,
+            table_id: u64,
+            agent_name: felt252,
+        ) -> felt252 {
             let mut world = self.world_default();
             let caller = get_caller_address();
 
             assert(is_operator(ref world, caller), 'not authorized to mint');
             assert(agent_name != 0, 'agent_name cannot be empty');
+            assert(owner != 0.try_into().unwrap(), 'invalid owner address');
 
             let mut counter: GameTokenCounter = world.read_model(0_u8);
             if counter.next_id == 0 {
@@ -275,7 +284,7 @@ pub mod egs_system {
 
             let token = GameToken {
                 token_id,
-                owner: caller,
+                owner,
                 table_id,
                 agent_name,
                 hands_played: 0,
@@ -286,7 +295,7 @@ pub mod egs_system {
             };
             world.write_model(@token);
 
-            self.emit(TokenMinted { token_id, owner: caller, table_id });
+            self.emit(TokenMinted { token_id, owner, table_id });
 
             token_id
         }
