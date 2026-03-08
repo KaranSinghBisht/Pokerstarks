@@ -36,10 +36,15 @@ pub mod settle_system {
                 // Deduct rake on fold-wins too
                 if table.rake_bps > 0 {
                     let rake_amount = hand.pot * table.rake_bps.into() / 10000;
-                    let rake = if rake_amount > table.rake_cap {
+                    let rake_capped = if rake_amount > table.rake_cap {
                         table.rake_cap
                     } else {
                         rake_amount
+                    };
+                    let rake = if rake_capped > hand.pot {
+                        hand.pot
+                    } else {
+                        rake_capped
                     };
                     hand.pot -= rake;
 
