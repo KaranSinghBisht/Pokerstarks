@@ -60,8 +60,10 @@ pub mod showdown_system {
             };
             assert(seat_idx != 255, 'player not at table');
 
-            let ph: PlayerHand = world.read_model((hand_id, seat_idx));
-            assert(!ph.has_folded, 'player folded');
+            let _ph: PlayerHand = world.read_model((hand_id, seat_idx));
+            // Folded players CAN vote on card decryption — they participated
+            // in the mental poker protocol and hold valid reveal tokens.
+            // Blocking them would stall consensus (required_votes = num_players).
 
             // Check not already submitted for this position
             let existing: CardDecryptionVote = world

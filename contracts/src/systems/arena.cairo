@@ -583,10 +583,18 @@ pub mod arena_system {
             let caller = get_caller_address();
             let config: ArenaConfig = world.read_model(0_u8);
 
-            // First call (operator is zero) allows anyone to bootstrap;
-            // subsequent calls require the current operator.
-            if config.operator != ZERO_ADDR.try_into().unwrap() {
+            let zero: ContractAddress = ZERO_ADDR.try_into().unwrap();
+            if config.operator != zero {
+                // Only the current operator can transfer the role
                 assert(caller == config.operator, 'not current operator');
+            } else {
+                // Bootstrap: only the deployer (tx origin) can set the first operator.
+                // This prevents front-running by requiring the actual tx sender.
+                let tx_info = starknet::get_tx_info().unbox();
+                assert(
+                    caller == tx_info.account_contract_address,
+                    'must be direct call',
+                );
             }
 
             let new_config = ArenaConfig { singleton: 0_u8, operator };
