@@ -4,7 +4,7 @@
 
 **Fully on-chain, zero-knowledge Texas Hold'em on Starknet. No trusted dealer. No server sees your cards.**
 
-[Live Demo](https://frontend-seven-beta-93.vercel.app) | RE{DEFINE} Hackathon — Privacy Track | EGS Compliant
+[Live Demo](https://pokerstarks.vercel.app/) | EGS Compliant
 
 ---
 
@@ -103,7 +103,7 @@ The full system is deployed and indexed on Sepolia testnet.
 | Service | URL |
 |---------|-----|
 | Torii Indexer | `https://api.cartridge.gg/x/pokerstarks-torii/torii` |
-| Frontend | [https://frontend-seven-beta-93.vercel.app](https://frontend-seven-beta-93.vercel.app) |
+| Frontend | [https://pokerstarks.vercel.app/](https://pokerstarks.vercel.app/) |
 | RPC | `https://api.cartridge.gg/x/starknet/sepolia` |
 
 ---
@@ -112,7 +112,7 @@ The full system is deployed and indexed on Sepolia testnet.
 
 ### Option A: Browse the Live Site
 
-Visit [https://frontend-seven-beta-93.vercel.app](https://frontend-seven-beta-93.vercel.app) to explore the lobby, create tables, and connect with Cartridge Controller. The live site connects to Sepolia contracts and the Torii indexer.
+Visit [https://pokerstarks.vercel.app/](https://pokerstarks.vercel.app/) to explore the lobby, create tables, and connect with Cartridge Controller. The live site connects to Sepolia contracts and the Torii indexer.
 
 > **Note**: Full ZK gameplay (shuffle proofs, card dealing) requires the Garaga calldata server, which runs locally. The live site supports lobby browsing, table creation, and betting — but the cryptographic shuffle phase requires the local dev stack (see Option B).
 
@@ -203,6 +203,10 @@ Pokerstarks implements the [Embeddable Game Standard](https://docs.provable.game
 | Game-specific: mint, update_score, complete_session | Implemented |
 
 The EGS system (`egs_system`) exposes `score()` and `game_over()` keyed by `felt252` token IDs, enabling any EGS platform to query game session results. SRC5 interface discovery returns `true` for `IMINIGAME_ID` (`0x1050f9a...`), allowing Denshokan and other platforms to detect and embed Pokerstarks.
+
+### Denshokan SDK Integration
+
+The frontend integrates the [`@provable-games/denshokan-sdk`](https://github.com/Provable-Games/denshokan/tree/main/client) for querying EGS data. The `DenshokanProvider` wraps the app with Sepolia addresses for the Denshokan token contract, registry, and viewer — enabling hooks like `useLeaderboard()`, `useScoreUpdates()`, and `useGames()` for real-time game session data across the EGS ecosystem.
 
 ---
 
@@ -405,7 +409,7 @@ Key variables:
 
 ## Team
 
-Built by [Karan Singh Bisht](https://github.com/KaranSinghBisht) for the [RE{DEFINE} Hackathon](https://redefinehack.com/) — Privacy Track.
+Built by [Karan Singh Bisht](https://github.com/KaranSinghBisht).
 
 ---
 

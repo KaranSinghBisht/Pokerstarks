@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { StarknetProvider } from "@/providers/StarknetProvider";
+import { DenshokanWrapper } from "@/providers/DenshokanProvider";
 import BrandedTerminalBackground from "@/components/effects/BrandedTerminalBackground";
 import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || "https://frontend-seven-beta-93.vercel.app",
+    process.env.NEXT_PUBLIC_SITE_URL || "https://pokerstarks.vercel.app",
   ),
   title: "Pokerstarks — ZK Poker on Starknet",
   description: "Provably fair poker with zero-knowledge proofs on Starknet",
@@ -38,7 +39,9 @@ export default function RootLayout({
           />
           <BrandedTerminalBackground />
           <div className="relative z-20 min-h-screen">
-            <StarknetProvider>{children}</StarknetProvider>
+            <StarknetProvider>
+              <DenshokanWrapper>{children}</DenshokanWrapper>
+            </StarknetProvider>
           </div>
         </div>
       </body>
