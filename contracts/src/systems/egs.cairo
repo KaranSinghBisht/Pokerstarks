@@ -255,10 +255,13 @@ pub mod egs_system {
 
     #[abi(embed_v0)]
     impl PokerstarksEGSImpl of IPokerstarksEGS<ContractState> {
+        /// Mint a new EGS game token. Restricted to the arena operator to
+        /// prevent sybil spam on the leaderboard.
         fn mint(ref self: ContractState, table_id: u64, agent_name: felt252) -> felt252 {
             let mut world = self.world_default();
             let caller = get_caller_address();
 
+            assert(is_operator(ref world, caller), 'not authorized to mint');
             assert(agent_name != 0, 'agent_name cannot be empty');
 
             let mut counter: GameTokenCounter = world.read_model(0_u8);

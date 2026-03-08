@@ -659,7 +659,8 @@ class PokerBot {
         (t) => t.handId === hand.handId && t.cardPosition === pos && t.proofVerified,
       );
 
-      const required = isCommunity ? hand.numPlayers : (hand.numPlayers > 0 ? hand.numPlayers - 1 : 0);
+      // Contract requires ALL N players' tokens for both community and hole cards
+      const required = hand.numPlayers;
       if (tokensForPos.length < required) continue;
 
       const includeOwnToken = !isCommunity;

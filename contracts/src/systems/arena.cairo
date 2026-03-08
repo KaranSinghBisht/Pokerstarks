@@ -218,6 +218,11 @@ pub mod arena_system {
             world.write_model(@bankroll);
         }
 
+        /// Deposit virtual chips into an agent's arena bankroll.
+        /// NOTE: This is accounting-only for the agent arena leaderboard system.
+        /// No real token transfer/escrow occurs — arena chips are virtual points
+        /// used for Elo-rated matchmaking. Real token escrow (if needed) should
+        /// be handled by a separate staking contract.
         fn deposit_chips(ref self: ContractState, agent_id: u32, amount: u128) {
             let mut world = self.world_default();
             let caller = get_caller_address();
@@ -380,6 +385,15 @@ pub mod arena_system {
                 v += 1;
             };
             assert(winner_found, 'winner not in match');
+
+            // Chip conservation: deltas must sum to zero (zero-sum game)
+            let mut delta_sum: i128 = 0;
+            let mut ds: u32 = 0;
+            while ds < chip_deltas.len() {
+                delta_sum += *chip_deltas.at(ds);
+                ds += 1;
+            };
+            assert(delta_sum == 0, 'chip_deltas not zero-sum');
 
             // Update match
             arena_match.status = MatchStatus::Complete;
@@ -617,21 +631,26 @@ pub mod arena_system {
             let caller = get_caller_address();
             let config: ArenaConfig = world.read_model(0_u8);
 
-            let zero: ContractAddress = ZERO_ADDR.try_into().unwrap();
-            if config.operator != zero {
-                // Only the current operator can transfer the role
-                assert(caller == config.operator, 'not current operator');
-            } else {
-                // Bootstrap: only the deployer (tx origin) can set the first operator.
-                // This prevents front-running by requiring the actual tx sender.
-                let tx_info = starknet::get_tx_info().unbox();
-                assert(
-                    caller == tx_info.account_contract_address,
-                    'must be direct call',
-                );
-            }
+            // Only the current operator can transfer the role.
+            // Initial operator is set via dojo_init during migration,
+            // which is restricted to the world admin.
+            assert(
+                config.operator != ZERO_ADDR.try_into().unwrap(), 'operator not initialized',
+            );
+            assert(caller == config.operator, 'not current operator');
 
             let new_config = ArenaConfig { singleton: 0_u8, operator };
+            world.write_model(@new_config);
+        }
+    }
+
+    fn dojo_init(ref self: ContractState) {
+        let mut world = self.world_default();
+        let caller = get_caller_address();
+        let config: ArenaConfig = world.read_model(0_u8);
+        let zero: ContractAddress = ZERO_ADDR.try_into().unwrap();
+        if config.operator == zero {
+            let new_config = ArenaConfig { singleton: 0_u8, operator: caller };
             world.write_model(@new_config);
         }
     }

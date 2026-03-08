@@ -21,13 +21,18 @@ export function verifyApiToken(request: Request): NextResponse | null {
     return NextResponse.json({ error: "Missing authentication token" }, { status: 401 });
   }
 
-  const dotIndex = token.indexOf(".");
+  // Token format: "<timestamp>:<nonce>.<hmac>" or legacy "<timestamp>.<hmac>"
+  const dotIndex = token.lastIndexOf(".");
   if (dotIndex === -1) {
     return NextResponse.json({ error: "Malformed authentication token" }, { status: 401 });
   }
 
-  const timestamp = token.slice(0, dotIndex);
+  const payload = token.slice(0, dotIndex);
   const signature = token.slice(dotIndex + 1);
+
+  // Extract timestamp (first part before any colon)
+  const colonIndex = payload.indexOf(":");
+  const timestamp = colonIndex >= 0 ? payload.slice(0, colonIndex) : payload;
 
   // Validate timestamp is a number and within acceptable age
   const ts = Number(timestamp);
@@ -35,9 +40,9 @@ export function verifyApiToken(request: Request): NextResponse | null {
     return NextResponse.json({ error: "Token expired" }, { status: 401 });
   }
 
-  // Compute expected HMAC
+  // Compute expected HMAC over the full payload (timestamp:nonce)
   const expected = createHmac("sha256", WALLET_API_SECRET)
-    .update(timestamp)
+    .update(payload)
     .digest("hex");
 
   // Constant-time comparison

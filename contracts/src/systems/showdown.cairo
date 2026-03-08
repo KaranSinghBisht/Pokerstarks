@@ -86,7 +86,6 @@ pub mod showdown_system {
             };
             world.write_model(@vote);
 
-            let active_count = count_active_players(ref world, hand_id, table.max_players);
             let mut vote_count: u8 = 0;
             let mut j: u8 = 0;
             while j < table.max_players {
@@ -97,10 +96,6 @@ pub mod showdown_system {
                 j += 1;
             };
 
-            // R-01 FIX: Determine if this position is a community card or hole card.
-            // In mental poker, only the owner can decrypt their hole cards (they hold
-            // the secret key, others only have N-1 reveal tokens). So hole cards
-            // finalize with a single owner vote; community cards need all-player consensus.
             let comm: CommunityCards = world.read_model(hand_id);
             let is_community = card_position == comm.flop_1_pos
                 || card_position == comm.flop_2_pos
@@ -108,18 +103,19 @@ pub mod showdown_system {
                 || card_position == comm.turn_pos
                 || card_position == comm.river_pos;
 
-            // P0 FIX: ALL active players vote on ALL cards (community AND hole cards).
-            // Previously hole cards only required the owner's vote, which was trivially
-            // forgeable since no cryptographic proof bound the claimed card_id.
-
+            // All players (including folded) vote on ALL cards.
+            // Folded players participated in the mental poker protocol
+            // and hold valid reveal tokens, so they must vote for consensus.
             let required_votes: u8 = hand.num_players;
 
             if vote_count >= required_votes {
-                // P0 FIX: Both community and hole cards use majority vote consensus.
+                // Majority consensus: require strict majority of ALL voters
+                // (not just active/non-folded players) to prevent small
+                // coalitions of folded players from forcing card outcomes.
                 let (majority_id, majority_count) = find_majority_vote(
                     ref world, hand_id, card_position, table.max_players,
                 );
-                if majority_count * 2 <= active_count {
+                if majority_count * 2 <= hand.num_players {
                     return;
                 }
                 let first_card_id = majority_id;
@@ -494,21 +490,6 @@ pub mod showdown_system {
             hand.phase = GamePhase::Settling;
             world.write_model(@hand);
         }
-    }
-
-    fn count_active_players(
-        ref world: dojo::world::WorldStorage, hand_id: u64, max_players: u8,
-    ) -> u8 {
-        let mut count: u8 = 0;
-        let mut i: u8 = 0;
-        while i < max_players {
-            let ph: PlayerHand = world.read_model((hand_id, i));
-            if ph.player != 0.try_into().unwrap() && !ph.has_folded {
-                count += 1;
-            }
-            i += 1;
-        };
-        count
     }
 
     fn count_tokens_for_position(

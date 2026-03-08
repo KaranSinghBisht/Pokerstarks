@@ -67,7 +67,7 @@ export function exportTongoKey(walletAddress: string): string | null {
 export function importTongoKey(walletAddress: string, hexKey: string): boolean {
   try {
     const pk = BigInt(hexKey);
-    if (pk <= 0n) return false;
+    if (pk < 1n || pk >= STARK_CURVE_ORDER) return false;
     saveTongoKey(walletAddress, pk);
     return true;
   } catch {
