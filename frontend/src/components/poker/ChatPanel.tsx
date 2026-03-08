@@ -1,8 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { useChat } from "@/hooks/useChat";
 import { useStarknet } from "@/providers/StarknetProvider";
+
+const EMOTE_ICONS: Record<string, string> = {
+  gg: "GG",
+  nh: "NH",
+  ty: "TY",
+  gl: "GL",
+  wp: "WP",
+  lol: "LOL",
+  wow: "WOW",
+  bluff: "?!",
+};
 
 interface ChatPanelProps {
   tableId: number;
@@ -77,15 +89,30 @@ export default function ChatPanel({ tableId }: ChatPanelProps) {
                     {msg.content}
                   </div>
                 </>
+              ) : msg.messageType === "Emote" ? (
+                <motion.div
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                  className="flex items-center gap-2"
+                >
+                  <span className="font-retro-display text-[8px] uppercase text-[var(--accent)]">
+                    {senderLabel}
+                  </span>
+                  <div className="inline-flex items-center gap-1 border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 py-1.5 font-retro-display text-[11px] text-[var(--accent)] pixel-border-sm">
+                    <span className="text-[13px] font-bold">
+                      {EMOTE_ICONS[msg.content.toLowerCase()] || msg.content.slice(0, 3).toUpperCase()}
+                    </span>
+                    <span className="text-[9px] text-[var(--accent)]/70">{msg.content}</span>
+                  </div>
+                </motion.div>
               ) : (
                 <>
                   <span
                     className={`font-retro-display text-[8px] uppercase ${
                       isMine
                         ? "text-[var(--secondary)]"
-                        : msg.messageType === "Emote"
-                          ? "text-[var(--accent)]"
-                          : "text-[var(--primary)]"
+                        : "text-[var(--primary)]"
                     }`}
                   >
                     {senderLabel}
