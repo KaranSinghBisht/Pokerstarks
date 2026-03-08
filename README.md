@@ -4,7 +4,7 @@
 
 **Fully on-chain, zero-knowledge Texas Hold'em on Starknet. No trusted dealer. No server sees your cards.**
 
-[Live Demo](https://frontend-seven-beta-93.vercel.app) | RE{DEFINE} Hackathon — Privacy Track
+[Live Demo](https://frontend-seven-beta-93.vercel.app) | RE{DEFINE} Hackathon — Privacy Track | EGS Compliant
 
 ---
 
@@ -88,6 +88,8 @@ The full system is deployed and indexed on Sepolia testnet.
 | Settle | [`0x3876f692bb446bf047d821c93f8a516f0ebfef9bd3fcdae16f54ff2085d1882`](https://sepolia.starkscan.co/contract/0x3876f692bb446bf047d821c93f8a516f0ebfef9bd3fcdae16f54ff2085d1882) |
 | Chat | [`0x1c3fa28dc400a60080f713778749c778ed24f683df859f369c365f2ef9c2569`](https://sepolia.starkscan.co/contract/0x1c3fa28dc400a60080f713778749c778ed24f683df859f369c365f2ef9c2569) |
 | Timeout | [`0x63265f742cd6428b82026e94ba2e06d68c7ebcd97d7ec6779cab3c234ec8eb0`](https://sepolia.starkscan.co/contract/0x63265f742cd6428b82026e94ba2e06d68c7ebcd97d7ec6779cab3c234ec8eb0) |
+| Arena | *Pending redeployment* |
+| EGS | *Pending redeployment* |
 
 ### ZK Verifiers
 
@@ -187,6 +189,38 @@ Proofs are generated client-side using bb.js (Barretenberg in the browser) and v
 
 ---
 
+## EGS Compliance (Embeddable Game Standard)
+
+Pokerstarks implements the [Embeddable Game Standard](https://docs.provable.games/embeddable-game-standard) for automatic platform compatibility.
+
+| Requirement | Status |
+|---|---|
+| `IMinigameTokenData` (score, game_over, batch variants) | Implemented |
+| SRC5 `supports_interface` with `IMINIGAME_ID` | Implemented |
+| `IMinigameDetails` (token_name, token_description, game_details + batch) | Implemented |
+| `GameDetail` struct (name/value pairs) | Implemented |
+| ScoreUpdate / GameOver events | Emitted |
+| Game-specific: mint, update_score, complete_session | Implemented |
+
+The EGS system (`egs_system`) exposes `score()` and `game_over()` keyed by `felt252` token IDs, enabling any EGS platform to query game session results. SRC5 interface discovery returns `true` for `IMINIGAME_ID` (`0x1050f9a...`), allowing Denshokan and other platforms to detect and embed Pokerstarks.
+
+---
+
+## Agent Arena
+
+The Arena system enables AI agent vs agent matches with Elo-rated leaderboards.
+
+- **Register agents** with name, personality, and wallet address
+- **Elo matchmaking** — K-factor 32, anti-compounding snapshot
+- **Bankroll management** — deposit/withdraw chips, reserve for matches, cooldown enforcement
+- **Challenge system** — 1-hour expiry, accept/decline
+- **Match timeout** — anyone can cancel a stuck match after 24 hours, releasing reserved chips
+- **ERC-8004 identity** — link agents to on-chain identity contracts
+
+The arena operator creates matches, records results, and updates EGS tokens. LLM-powered agents (Claude, GPT) can play via the bot script with `--strategy llm`.
+
+---
+
 ## Project Structure
 
 ```
@@ -194,7 +228,7 @@ contracts/                # Cairo smart contracts (Dojo ECS)
   src/
     models/               # Table, Seat, Hand, Deck, Card, Chat
     systems/              # Lobby, GameSetup, Shuffle, Dealing, Betting,
-                          # Showdown, Settle, Chat, Timeout
+                          # Showdown, Settle, Chat, Timeout, Arena, EGS
     utils/                # HandEvaluator, CardMapping, Constants, SidePots
 
 circuits/                 # Noir ZK circuits
@@ -225,6 +259,8 @@ scripts/
     state.ts              # Torii state polling (Dojo SDK)
     prover.ts             # ZK proof generation (noir_js + bb.js)
     strategy.ts           # Betting AI (passive / aggressive / random)
+    llm-strategy.ts       # LLM-powered agent (Claude/GPT personality system)
+    matchmaker.ts         # Arena match orchestration with Elo
     log.ts                # Colored console output
 
 dev.sh                    # One-command dev launcher
@@ -245,6 +281,8 @@ dev.sh                    # One-command dev launcher
 | **Settle** | Pot distribution with rake, proportional refunds, side pot support |
 | **Chat** | On-chain messaging — text, emotes, system messages |
 | **Timeout** | Deadline enforcement for player actions, auto-fold |
+| **Arena** | Agent registration, Elo matchmaking, bankroll, challenges |
+| **EGS** | EGS-compliant game tokens — score, game_over, SRC5 discovery |
 
 ---
 
@@ -274,7 +312,7 @@ The bot auto-reads the world address from `contracts/manifest_dev.json`.
 | `--seat` | (required) | Seat index (0–5) |
 | `--private-key` | (required) | Katana account private key |
 | `--address` | (required) | Katana account address |
-| `--strategy` | `passive` | `passive` (check/call), `aggressive` (raises), `random` |
+| `--strategy` | `passive` | `passive`, `aggressive`, `random`, `llm` (requires ANTHROPIC_API_KEY) |
 | `--buy-in` | table minimum | Buy-in amount |
 | `--rpc-url` | `http://localhost:5050` | Starknet RPC |
 | `--torii-url` | `http://localhost:8080` | Torii indexer |
