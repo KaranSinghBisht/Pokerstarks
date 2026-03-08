@@ -729,8 +729,11 @@ class PokerBot {
     if (this.config.egsTokenId) {
       this.egsHandsPlayed += 1;
       try {
-        const mySeatData = gs.seats.find(
-          (s) => s.player.toLowerCase() === this.config.address.toLowerCase(),
+        // M2 FIX: Wait for Torii to index the new state before reading scores
+        await sleep(2000);
+        const freshGs = await this.state.poll(this.config.tableId);
+        const mySeatData = (freshGs.seats.length > 0 ? freshGs.seats : gs.seats).find(
+          (s: { player: string }) => s.player.toLowerCase() === this.config.address.toLowerCase(),
         );
         const chipCount = mySeatData ? Number(mySeatData.chips) : 0;
         await this.chain.egsUpdateScore(this.config.egsTokenId, this.egsHandsPlayed, chipCount);

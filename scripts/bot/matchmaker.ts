@@ -309,6 +309,7 @@ interface SpawnBotOptions {
   egsTokenId: string;
 }
 
+// L3: Currently unused but retained for future challenge mode auto-spawn
 function spawnBot(opts: SpawnBotOptions): ChildProcess {
   const botScript = resolve(__dirname, "index.ts");
   const args = [
@@ -433,12 +434,17 @@ async function main() {
   async function mintEgsTokens(agentIds: number[], tableId: number): Promise<string[]> {
     if (!config.egsEnabled || !egsAddress) return [];
 
-    // Read counter to predict token IDs (next_id is assigned, then incremented)
+    // M1 NOTE: Token ID prediction via counter read is inherently racy if
+    // multiple matchmakers run concurrently. Since we enforce a single operator
+    // (C1 fix), this is acceptable. For robustness, parse TokenMinted events
+    // from the tx receipt once Torii event indexing is reliable.
     let nextId: bigint;
     try {
       nextId = await fetchEgsNextId(config.toriiUrl, config.worldAddress);
+      // M3 FIX: Counter now starts at 1
+      if (nextId === 0n) nextId = 1n;
     } catch {
-      nextId = 0n;
+      nextId = 1n;
     }
 
     const tokenIds: string[] = [];
