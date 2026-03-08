@@ -42,6 +42,7 @@ export default function TablePage() {
     myHoleCards,
     isProving,
     provingProgress,
+    sidePots,
     actions,
   } = useGameOrchestrator(tableId);
 
@@ -301,6 +302,7 @@ export default function TablePage() {
             onFillWithBots={handleFillWithBots}
             fillingBots={fillingBots}
             isPrivacyMode={isPrivacyTable}
+            sidePots={sidePots}
           />
         </div>
 

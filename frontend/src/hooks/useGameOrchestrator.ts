@@ -30,6 +30,7 @@ export function useGameOrchestrator(tableId: number) {
     communityCards,
     currentDeck,
     revealTokens,
+    sidePots,
     loading,
     error: gameError,
     refresh,
@@ -248,6 +249,7 @@ export function useGameOrchestrator(tableId: number) {
     phase,
     isMyTurn,
     isMyTurnToShuffle,
+    sidePots,
     actions,
     refresh,
   };

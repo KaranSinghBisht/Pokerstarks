@@ -10,6 +10,7 @@ import type {
   CommunityCardsData,
   EncryptedDeckData,
   RevealTokenData,
+  SidePotData,
 } from "@/lib/types";
 import { WORLD_ADDRESS, TORII_URL, NAMESPACE } from "@/lib/dojo-config";
 
@@ -25,6 +26,7 @@ const MODELS = {
   communityCards: `${NAMESPACE}-CommunityCards`,
   encryptedDeck: `${NAMESPACE}-EncryptedDeck`,
   revealToken: `${NAMESPACE}-RevealToken`,
+  sidePot: `${NAMESPACE}-SidePot`,
 } as const;
 
 /**
@@ -213,6 +215,17 @@ function parseRevealToken(models: Record<string, unknown>): RevealTokenData | nu
   };
 }
 
+function parseSidePot(models: Record<string, unknown>): SidePotData | null {
+  const sp = getModel(models, MODELS.sidePot);
+  if (!sp) return null;
+  return {
+    handId: asNumber(sp.hand_id),
+    potIndex: asNumber(sp.pot_index),
+    amount: asBigInt(sp.amount),
+    eligibleMask: asNumber(sp.eligible_mask),
+  };
+}
+
 interface UseGameReturn {
   table: TableData | null;
   seats: SeatData[];
@@ -221,6 +234,7 @@ interface UseGameReturn {
   communityCards: CommunityCardsData | undefined;
   currentDeck: EncryptedDeckData | null;
   revealTokens: RevealTokenData[];
+  sidePots: SidePotData[];
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -234,6 +248,7 @@ export function useGame(tableId: number): UseGameReturn {
   const [communityCards, setCommunityCards] = useState<CommunityCardsData | undefined>(undefined);
   const [currentDeck, setCurrentDeck] = useState<EncryptedDeckData | null>(null);
   const [revealTokens, setRevealTokens] = useState<RevealTokenData[]>([]);
+  const [sidePots, setSidePots] = useState<SidePotData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sdkRef = useRef<Awaited<ReturnType<typeof init<DojoSchema>>> | null>(null);
@@ -295,6 +310,7 @@ export function useGame(tableId: number): UseGameReturn {
         setCommunityCards(undefined);
         setCurrentDeck(null);
         setRevealTokens([]);
+        setSidePots([]);
         setError(`Table #${tableId} not found.`);
         setLoading(false);
         return;
@@ -321,12 +337,14 @@ export function useGame(tableId: number): UseGameReturn {
           communityEntities,
           encryptedDeckEntities,
           revealTokenEntities,
+          sidePotEntities,
         ] = await Promise.all([
           fetchModel(sdk, MODELS.hand, [String(handId)], 1),
           fetchModel(sdk, MODELS.playerHand, [String(handId)], 16),
           fetchModel(sdk, MODELS.communityCards, [String(handId)], 1),
           fetchModel(sdk, MODELS.encryptedDeck, [String(handId)], 64),
           fetchModel(sdk, MODELS.revealToken, [String(handId)], 1500),
+          fetchModel(sdk, MODELS.sidePot, [String(handId)], 16),
         ]);
 
         if (handEntities.length > 0) {
@@ -362,6 +380,14 @@ export function useGame(tableId: number): UseGameReturn {
           if (a.cardPosition !== b.cardPosition) return a.cardPosition - b.cardPosition;
           return a.playerSeat - b.playerSeat;
         });
+
+        const sidePotParsed: SidePotData[] = [];
+        for (const entity of sidePotEntities) {
+          const sp = parseSidePot(entity.models?.[NAMESPACE] ?? {});
+          if (sp && sp.amount > 0n) sidePotParsed.push(sp);
+        }
+        sidePotParsed.sort((a, b) => a.potIndex - b.potIndex);
+        setSidePots(sidePotParsed);
       }
 
       setTable(tableParsed);
@@ -381,6 +407,7 @@ export function useGame(tableId: number): UseGameReturn {
       setCommunityCards(undefined);
       setCurrentDeck(null);
       setRevealTokens([]);
+      setSidePots([]);
       setError(err instanceof Error ? err.message : "Failed to load game state.");
       setLoading(false);
     }
@@ -400,6 +427,7 @@ export function useGame(tableId: number): UseGameReturn {
     communityCards,
     currentDeck,
     revealTokens,
+    sidePots,
     loading,
     error,
     refresh: loadFromTorii,

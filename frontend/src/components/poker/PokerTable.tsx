@@ -10,6 +10,7 @@ import type {
   HandData,
   PlayerHandData,
   CommunityCardsData,
+  SidePotData,
 } from "@/lib/types";
 import {
   PlayerAction,
@@ -45,6 +46,7 @@ interface PokerTableProps {
   onFillWithBots?: () => void;
   fillingBots?: boolean;
   isPrivacyMode?: boolean;
+  sidePots?: SidePotData[];
 }
 
 export default function PokerTable({
@@ -64,6 +66,7 @@ export default function PokerTable({
   onFillWithBots,
   fillingBots,
   isPrivacyMode: isPrivacyModeProp,
+  sidePots,
 }: PokerTableProps) {
   const localSeat = seats.find((s) => s.isOccupied && s.player === localPlayerAddress);
   const localPlayerHand = playerHands.find(
@@ -144,6 +147,20 @@ export default function PokerTable({
                 >
                   POT: {Number(hand.pot).toLocaleString()}
                 </motion.div>
+                {sidePots && sidePots.length > 0 && (
+                  <div className="mt-1 flex flex-wrap justify-center gap-1">
+                    {sidePots.map((sp) => (
+                      <motion.div
+                        key={sp.potIndex}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="border border-white/20 bg-black/60 px-2 py-0.5 font-retro-display text-[7px] text-slate-300"
+                      >
+                        SIDE {sp.potIndex + 1}: {Number(sp.amount).toLocaleString()}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
