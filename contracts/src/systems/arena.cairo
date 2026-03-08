@@ -33,6 +33,7 @@ pub trait IArena<T> {
     fn set_erc8004_identity(
         ref self: T, agent_id: u32, identity_address: starknet::ContractAddress,
     );
+    fn cancel_stale_match(ref self: T, match_id: u32);
     fn set_operator(ref self: T, operator: starknet::ContractAddress);
 }
 
@@ -51,6 +52,7 @@ pub mod arena_system {
     const INITIAL_ELO: u32 = 1000;
     const K_FACTOR: u32 = 32;
     const CHALLENGE_EXPIRY: u64 = 3600; // 1 hour
+    const MATCH_TIMEOUT: u64 = 86400; // 24 hours
 
     #[derive(Drop, starknet::Event)]
     struct AgentIdentityLinked {
@@ -561,6 +563,38 @@ pub mod arena_system {
             challenge.status = ChallengeStatus::Declined;
             world.write_model(@challenge);
             self.emit(ChallengeResolved { challenge_id, status: ChallengeStatus::Declined });
+        }
+
+        fn cancel_stale_match(ref self: ContractState, match_id: u32) {
+            let mut world = self.world_default();
+            let now = get_block_timestamp();
+
+            let mut arena_match: ArenaMatch = world.read_model(match_id);
+            assert(arena_match.status == MatchStatus::InProgress, 'match not in progress');
+            assert(
+                now >= arena_match.created_at + MATCH_TIMEOUT, 'match not yet timed out',
+            );
+
+            let buy_in = arena_match.buy_in;
+            let num: u8 = arena_match.num_agents;
+
+            // Release reserved chips for each agent
+            let mut i: u8 = 0;
+            while i < num {
+                let ma: ArenaMatchAgent = world.read_model((match_id, i));
+                let mut bankroll: AgentBankroll = world.read_model(ma.agent_id);
+                if bankroll.reserved_chips >= buy_in {
+                    bankroll.reserved_chips -= buy_in;
+                } else {
+                    bankroll.reserved_chips = 0;
+                }
+                world.write_model(@bankroll);
+                i += 1;
+            };
+
+            arena_match.status = MatchStatus::Cancelled;
+            arena_match.completed_at = now;
+            world.write_model(@arena_match);
         }
 
         fn set_erc8004_identity(

@@ -90,5 +90,20 @@ export function useArenaActions() {
     [account, arenaAddress],
   );
 
-  return { registerAgent, challengeAgent, acceptChallenge, declineChallenge };
+  const cancelStaleMatch = useCallback(
+    async (matchId: number) => {
+      if (!account) throw new Error("Wallet not connected");
+      if (!arenaAddress) throw new Error("Arena contract address not configured");
+
+      const result = await account.execute({
+        contractAddress: arenaAddress,
+        entrypoint: "cancel_stale_match",
+        calldata: CallData.compile([matchId]),
+      });
+      return result;
+    },
+    [account, arenaAddress],
+  );
+
+  return { registerAgent, challengeAgent, acceptChallenge, declineChallenge, cancelStaleMatch };
 }

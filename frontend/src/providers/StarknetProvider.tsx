@@ -199,6 +199,7 @@ const SESSION_POLICIES: SessionPolicies = {
               { entrypoint: "update_agent_config" },
               { entrypoint: "deactivate_agent" },
               { entrypoint: "set_erc8004_identity" },
+              { entrypoint: "cancel_stale_match" },
               { entrypoint: "set_operator" },
             ],
           },

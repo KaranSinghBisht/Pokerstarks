@@ -48,6 +48,7 @@ pub enum MatchStatus {
     Pending,
     InProgress,
     Complete,
+    Cancelled,
 }
 
 #[derive(Serde, Copy, Drop, Introspect, PartialEq, Debug, DojoStore, Default)]
