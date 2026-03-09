@@ -88,8 +88,8 @@ The full system is deployed and indexed on Sepolia testnet.
 | Settle | [`0x3876f692bb446bf047d821c93f8a516f0ebfef9bd3fcdae16f54ff2085d1882`](https://sepolia.starkscan.co/contract/0x3876f692bb446bf047d821c93f8a516f0ebfef9bd3fcdae16f54ff2085d1882) |
 | Chat | [`0x1c3fa28dc400a60080f713778749c778ed24f683df859f369c365f2ef9c2569`](https://sepolia.starkscan.co/contract/0x1c3fa28dc400a60080f713778749c778ed24f683df859f369c365f2ef9c2569) |
 | Timeout | [`0x63265f742cd6428b82026e94ba2e06d68c7ebcd97d7ec6779cab3c234ec8eb0`](https://sepolia.starkscan.co/contract/0x63265f742cd6428b82026e94ba2e06d68c7ebcd97d7ec6779cab3c234ec8eb0) |
-| Arena | *Pending redeployment* |
-| EGS | *Pending redeployment* |
+| Arena | [`0x428f1303c8d09c848ae599e78e43d337f8fe6dd379075c133e4230170ed3b2a`](https://sepolia.starkscan.co/contract/0x428f1303c8d09c848ae599e78e43d337f8fe6dd379075c133e4230170ed3b2a) |
+| EGS | [`0x4d5afe4682878c106c2024b599960dc52adc51b32a78671d8304004b8b4e249`](https://sepolia.starkscan.co/contract/0x4d5afe4682878c106c2024b599960dc52adc51b32a78671d8304004b8b4e249) |
 
 ### ZK Verifiers
 
