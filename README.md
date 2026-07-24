@@ -4,6 +4,8 @@
 
 **Fully on-chain, zero-knowledge Texas Hold'em on Starknet. No trusted dealer. No server sees your cards.**
 
+> 🏆 **1st place (Open Track) — re{define} by Starknet**
+
 [Live Demo](https://pokerstarks.vercel.app/) | EGS Compliant
 
 ---
